@@ -129,3 +129,11 @@ export function productImages(p) {
 }
 
 export const productUrl = (id) => `/produit?id=${encodeURIComponent(id)}`;
+
+/** "4" -> "4 parts" ; "1" -> "1 part" ; un texte libre ("6 à 8 parts") est conservé tel quel. */
+export function formatParts(v) {
+  const t = String(v ?? "").trim();
+  if (!t) return "";
+  if (/^\d+$/.test(t)) return `${t} part${Number(t) > 1 ? "s" : ""}`;
+  return t;
+}

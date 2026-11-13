@@ -5,7 +5,7 @@ import {
 } from "./cart.js";
 import {
   ADMIN_EMAIL, EMAIL_LINK_KEY, esc, formatPrice, tomorrowISO, parseISODate,
-  getAvailability, groupByCategory, seasonLabel, productImages, productUrl
+  getAvailability, groupByCategory, seasonLabel, productImages, productUrl, formatParts
 } from "./catalog.js";
 import {
   collection, onSnapshot, addDoc, serverTimestamp
@@ -19,7 +19,8 @@ import {
 const state = {
   categories: [],
   products: [],
-  selectedCategory: "ALL",
+  activeCategory: null,   // catégorie en cours (scrollspy)
+  indexPos: null,         // position de scroll de la liste, mémorisée quand on la quitte
   cart: loadCart(),
   user: null,
   authReady: false,
@@ -27,7 +28,7 @@ const state = {
   productId: null,
   productQty: 1,
   galleryIndex: 0,
-  currentView: "patisseries",
+  currentView: null,
   showDateErrors: false
 };
 
@@ -71,7 +72,15 @@ function syncCartStorage() {
 }
 
 // ---------- Navigation ----------
+// Le navigateur ne doit pas restaurer le scroll lui-même : on gère la position de la liste.
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+
+const siteHeader = document.querySelector("header");
+let navIntent = null; // { top } | { restore } | { cat } — consommé par handleRouting
+
 function handleRouting() {
+  const intent = navIntent || {};
+  navIntent = null;
   const { pathname, hash, search } = window.location;
   if (pathname === "/produit") {
     state.productId = new URLSearchParams(search).get("id");
@@ -79,17 +88,35 @@ function handleRouting() {
   } else if (pathname === "/panier" || hash === "#panier") {
     switchView("panier");
   } else {
-    switchView("patisseries");
+    switchView("patisseries", intent);
   }
 }
 
-function switchView(name) {
+function switchView(name, intent = {}) {
+  const wasIndex = state.currentView === "patisseries";
+  if (wasIndex && name !== "patisseries") state.indexPos = window.scrollY; // on retient où l'on était
+
   state.currentView = name;
   viewPatisseries.classList.toggle("hidden", name !== "patisseries");
   viewPanier.classList.toggle("hidden", name !== "panier");
   viewProduit.classList.toggle("hidden", name !== "produit");
   orderConfirmation.classList.add("hidden");
   document.title = DEFAULT_TITLE;
+
+  if (name === "patisseries") {
+    syncStickyOffsets();
+    if (intent.cat) {
+      scrollToCategory(intent.cat, "auto");
+    } else if (!intent.top && state.indexPos != null) {
+      // Retour depuis une fiche produit / le panier : on retrouve la position précédente
+      window.scrollTo({ top: state.indexPos, behavior: "auto" });
+    } else {
+      window.scrollTo({ top: 0, behavior: wasIndex ? "smooth" : "auto" });
+    }
+    updateActiveCategory(true);
+    return;
+  }
+
   if (name === "panier") renderCartAccess();
   if (name === "produit") {
     state.productQty = 1;
@@ -99,64 +126,166 @@ function switchView(name) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function go(path) {
+function go(path, intent = null) {
+  navIntent = intent;
   window.history.pushState({}, "", path);
   handleRouting();
 }
 
-$("nav-logo-btn").addEventListener("click", () => go("/"));
+$("nav-logo-btn").addEventListener("click", () => go("/", { top: true }));
 $("nav-cart-btn").addEventListener("click", () => go("/panier"));
-$("back-to-shop-btn").addEventListener("click", () => go("/"));
-$("empty-continue-btn").addEventListener("click", () => go("/"));
-window.addEventListener("popstate", handleRouting);
+$("back-to-shop-btn").addEventListener("click", () => go("/", { restore: true }));
+$("empty-continue-btn").addEventListener("click", () => go("/", { restore: true }));
+window.addEventListener("popstate", handleRouting); // retour navigateur : position restaurée
 
 // Liens internes : navigation sans rechargement (le clic droit / nouvel onglet reste possible)
 document.addEventListener("click", (e) => {
   const a = e.target.closest("a[data-nav]");
   if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
   e.preventDefault();
-  if (a.dataset.cat) {
-    state.selectedCategory = a.dataset.cat;
-    renderCategories();
-    renderProducts();
-  }
-  go(a.getAttribute("href"));
+  const intent = a.dataset.cat ? { cat: a.dataset.cat } : a.dataset.restore !== undefined ? { restore: true } : { top: true };
+  go(a.getAttribute("href"), intent);
 });
 
 // ---------- Catalogue ----------
+const CAT_BTN_BASE = "shrink-0 px-4 py-2 text-xs uppercase tracking-[0.2em] border transition-colors whitespace-nowrap";
+const CAT_BTN_ON = "bg-[#2C2A29] text-[#FDFBF7] border-[#2C2A29]";
+const CAT_BTN_OFF = "bg-transparent text-[#2C2A29] border-[#2C2A29]/20 hover:border-[#2C2A29]";
+
+// La barre de catégories est collée sous l'en-tête (lui-même collant)
+function syncStickyOffsets() {
+  categoriesBar.style.top = `${siteHeader.offsetHeight}px`;
+}
+new ResizeObserver(syncStickyOffsets).observe(siteHeader);
+
+const stickyOffset = () => siteHeader.offsetHeight + categoriesBar.offsetHeight;
+
 function renderCategories() {
   const groups = groupByCategory(state.categories, state.products);
 
-  if (state.selectedCategory !== "ALL" && !groups.some((g) => g.id === state.selectedCategory)) {
-    state.selectedCategory = "ALL";
-  }
   if (state.products.length === 0) {
     categoriesBar.innerHTML = "";
     categoriesBar.classList.add("hidden");
     return;
   }
+  if (!groups.some((g) => g.id === state.activeCategory)) state.activeCategory = groups[0]?.id ?? null;
 
   categoriesBar.classList.remove("hidden");
-  const buttons = [{ id: "ALL", nom: "Toutes les créations" }, ...groups];
-  categoriesBar.innerHTML = buttons
-    .map((b) => {
-      const active = state.selectedCategory === b.id;
-      const cls = active
-        ? "bg-[#2C2A29] text-[#FDFBF7] border-[#2C2A29]"
-        : "bg-transparent text-[#2C2A29] border-[#2C2A29]/20 hover:border-[#2C2A29]";
-      return `<button type="button" data-cat-id="${esc(b.id)}" class="px-4 py-2 text-xs uppercase tracking-[0.2em] border transition-colors ${cls}">${esc(b.nom)}</button>`;
-    })
-    .join("");
+  categoriesBar.innerHTML = `<div class="flex gap-2 sm:gap-3 mx-auto w-max">${groups
+    .map((g) => `<button type="button" data-cat-id="${esc(g.id)}" class="${CAT_BTN_BASE} ${g.id === state.activeCategory ? CAT_BTN_ON : CAT_BTN_OFF}">${esc(g.nom)}</button>`)
+    .join("")}</div>`;
+  syncStickyOffsets();
 }
+
+// -- Scroll jusqu'à une catégorie, et catégorie en cours selon le scroll
+let spyLocked = false;
+let spyTimer = null;
+
+function lockSpy() {
+  spyLocked = true;
+  clearTimeout(spyTimer);
+  spyTimer = setTimeout(unlockSpy, 400); // si aucun scroll n'a lieu (déjà en place)
+}
+function unlockSpy() {
+  spyLocked = false;
+  updateActiveCategory();
+}
+
+function scrollToCategory(id, behavior = "smooth") {
+  const section = document.getElementById(`cat-${id}`);
+  if (!section) return;
+  lockSpy();
+  setActiveCategory(id);
+  const top = section.getBoundingClientRect().top + window.scrollY - stickyOffset() - 16;
+  window.scrollTo({ top: Math.max(0, top), behavior });
+}
+
+function setActiveCategory(id) {
+  if (state.activeCategory === id) return;
+  state.activeCategory = id;
+  categoriesBar.querySelectorAll("button[data-cat-id]").forEach((btn) => {
+    const on = btn.dataset.catId === id;
+    btn.className = `${CAT_BTN_BASE} ${on ? CAT_BTN_ON : CAT_BTN_OFF}`;
+    if (on) {
+      // garde le bouton actif visible dans la barre (mobile)
+      categoriesBar.scrollTo({ left: btn.offsetLeft - (categoriesBar.clientWidth - btn.clientWidth) / 2, behavior: "smooth" });
+    }
+  });
+}
+
+function updateActiveCategory(force = false) {
+  if (state.currentView !== "patisseries" || (spyLocked && !force)) return;
+  const sections = [...productsGrid.querySelectorAll("section[data-cat-section]")];
+  if (!sections.length) return;
+  const line = stickyOffset() + 24;
+  let current = sections[0].dataset.catSection;
+  for (const sec of sections) {
+    if (sec.getBoundingClientRect().top <= line) current = sec.dataset.catSection;
+  }
+  // en bas de page, la dernière catégorie (parfois courte) devient la catégorie en cours
+  if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+    current = sections[sections.length - 1].dataset.catSection;
+  }
+  setActiveCategory(current);
+}
+
+let spyFrame = null;
+window.addEventListener("scroll", () => {
+  if (spyLocked) {
+    // verrou levé 150 ms après la fin du scroll déclenché par un clic
+    clearTimeout(spyTimer);
+    spyTimer = setTimeout(unlockSpy, 150);
+    return;
+  }
+  if (spyFrame) return;
+  spyFrame = requestAnimationFrame(() => {
+    spyFrame = null;
+    updateActiveCategory();
+  });
+}, { passive: true });
+
+window.addEventListener("resize", () => updateActiveCategory(true));
 
 categoriesBar.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-cat-id]");
-  if (!btn) return;
-  state.selectedCategory = btn.dataset.catId;
-  renderCategories();
-  renderProducts();
+  if (btn) scrollToCategory(btn.dataset.catId);
 });
 
+function productCard(p) {
+  const av = getAvailability(p);
+  const off = !av.available;
+  const season = seasonLabel(p.saison);
+  const parts = formatParts(p.parts);
+  const img = p.imageUrl
+    ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${off ? "grayscale opacity-75" : ""}" loading="lazy" />`
+    : `<img src="assets/logo.svg" alt="Johanne &amp; Cie" class="w-full h-full object-contain p-6 bg-[#FDFBF7] opacity-80" />`;
+  const badge = off
+    ? `<span class="absolute top-3 right-3 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>`
+    : "";
+  const action = off
+    ? `<button type="button" disabled class="w-full py-2.5 px-4 border border-[#2C2A29]/25 text-[#7F7973] bg-[#FDFBF7] text-[11px] uppercase tracking-[0.2em] cursor-not-allowed">${esc(av.reason)}</button>`
+    : `<button type="button" data-add-id="${esc(p.id)}" class="w-full py-2.5 px-4 bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E] transition-colors text-[11px] uppercase tracking-[0.2em]">Ajouter au panier</button>`;
+
+  return `
+    <article class="product-card border border-[#2C2A29]/15 bg-white flex flex-col justify-between">
+      <div>
+        <a href="${productUrl(p.id)}" data-nav class="block relative aspect-[4/3] overflow-hidden border-b border-[#2C2A29]/10 bg-[#F4F0E8]" aria-label="Voir ${esc(p.nom)}">${img}${badge}</a>
+        ${parts ? `<p class="px-6 pt-3 text-[10px] uppercase tracking-[0.22em] text-[#7F7973]">${esc(parts)}</p>` : ""}
+        <div class="px-6 pb-6 ${parts ? "pt-1" : "pt-6"} space-y-2">
+          <div class="flex items-baseline justify-between gap-3">
+            <h3 class="font-serif text-2xl text-[#2C2A29] leading-snug"><a href="${productUrl(p.id)}" data-nav class="hover:underline underline-offset-4">${esc(p.nom || "Pâtisserie")}</a></h3>
+            <span class="font-serif text-lg text-[#2C2A29] shrink-0">${formatPrice(p.prix)}</span>
+          </div>
+          ${season ? `<p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
+          ${p.description ? `<p class="text-xs text-[#7F7973] leading-relaxed pt-1">${esc(p.description)}</p>` : ""}
+          <a href="${productUrl(p.id)}" data-nav class="inline-block pt-1 text-[10px] uppercase tracking-[0.2em] text-[#2C2A29] underline underline-offset-4">Voir le détail &rarr;</a>
+        </div>
+      </div>
+      <div class="px-6 pb-6 pt-2">${action}</div>
+    </article>`;
+}
+
+// Liste triée par catégorie ("Autre" toujours en dernier) : une section-ancre par catégorie
 function renderProducts() {
   if (state.products.length === 0) {
     productsGrid.innerHTML = "";
@@ -165,50 +294,21 @@ function renderProducts() {
   }
   emptyCatalog.classList.add("hidden");
 
-  // "Autre" est toujours en dernier ; au sein d'une catégorie, les articles disponibles passent d'abord
-  const groups = groupByCategory(state.categories, state.products).filter(
-    (g) => state.selectedCategory === "ALL" || g.id === state.selectedCategory
-  );
-  const items = groups.flatMap((g) =>
-    [...g.products]
-      .sort((a, b) => Number(!getAvailability(a).available) - Number(!getAvailability(b).available))
-      .map((p) => ({ p, catLabel: g.nom }))
-  );
-
-  productsGrid.innerHTML = items
-    .map(({ p, catLabel }) => {
-      const av = getAvailability(p);
-      const off = !av.available;
-      const season = seasonLabel(p.saison);
-      const img = p.imageUrl
-        ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${off ? "grayscale opacity-75" : ""}" loading="lazy" />`
-        : `<img src="assets/logo.svg" alt="Johanne &amp; Cie" class="w-full h-full object-contain p-6 bg-[#FDFBF7] opacity-80" />`;
-      const badge = off
-        ? `<span class="absolute top-3 right-3 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>`
-        : "";
-      const action = off
-        ? `<button type="button" disabled class="w-full py-2.5 px-4 border border-[#2C2A29]/25 text-[#7F7973] bg-[#FDFBF7] text-[11px] uppercase tracking-[0.2em] cursor-not-allowed">${esc(av.reason)}</button>`
-        : `<button type="button" data-add-id="${esc(p.id)}" class="w-full py-2.5 px-4 bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E] transition-colors text-[11px] uppercase tracking-[0.2em]">Ajouter au panier</button>`;
-
+  productsGrid.innerHTML = groupByCategory(state.categories, state.products)
+    .map((g) => {
+      // au sein d'une catégorie, les créations disponibles passent d'abord
+      const items = [...g.products].sort(
+        (a, b) => Number(!getAvailability(a).available) - Number(!getAvailability(b).available)
+      );
       return `
-        <article class="product-card border border-[#2C2A29]/15 bg-white flex flex-col justify-between">
-          <div>
-            <a href="${productUrl(p.id)}" data-nav class="block relative aspect-[4/3] overflow-hidden border-b border-[#2C2A29]/10 bg-[#F4F0E8]" aria-label="Voir ${esc(p.nom)}">${img}${badge}</a>
-            <div class="p-6 space-y-2">
-              <p class="text-[10px] uppercase tracking-[0.22em] text-[#7F7973]">${esc(catLabel)}</p>
-              <div class="flex items-baseline justify-between gap-3">
-                <h2 class="font-serif text-2xl text-[#2C2A29] leading-snug"><a href="${productUrl(p.id)}" data-nav class="hover:underline underline-offset-4">${esc(p.nom || "Pâtisserie")}</a></h2>
-                <span class="font-serif text-lg text-[#2C2A29] shrink-0">${formatPrice(p.prix)}</span>
-              </div>
-              ${season ? `<p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
-              ${p.description ? `<p class="text-xs text-[#7F7973] leading-relaxed pt-1">${esc(p.description)}</p>` : ""}
-              <a href="${productUrl(p.id)}" data-nav class="inline-block pt-1 text-[10px] uppercase tracking-[0.2em] text-[#2C2A29] underline underline-offset-4">Voir le détail &rarr;</a>
-            </div>
-          </div>
-          <div class="px-6 pb-6 pt-2">${action}</div>
-        </article>`;
+        <section id="cat-${esc(g.id)}" data-cat-section="${esc(g.id)}" class="space-y-6">
+          <h2 class="font-serif text-3xl tracking-wide border-b border-[#2C2A29]/15 pb-3">${esc(g.nom)}</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">${items.map(productCard).join("")}</div>
+        </section>`;
     })
     .join("");
+
+  updateActiveCategory();
 }
 
 productsGrid.addEventListener("click", (e) => {
@@ -269,7 +369,7 @@ function renderProductPage() {
   if (p.conservation) detailBlocks.push(`<p class="font-medium text-[#2C2A29]">${esc(p.conservation)}</p>`);
   if (p.composition) detailBlocks.push(`<p>${esc(p.composition).replace(/\n/g, "<br>")}</p>`);
   if (allergenes.length) detailBlocks.push(`<p>Présence de : <span class="font-medium text-[#2C2A29]">${esc(allergenes.map((a) => a.toLowerCase()).join(", "))}</span></p>`);
-  const facts = [p.parts && `Pour ${esc(p.parts)}`, p.poids && `Poids : ${esc(p.poids)}`, season && `Saison : ${esc(season.toLowerCase())}`].filter(Boolean);
+  const facts = [formatParts(p.parts) && `Pour ${esc(formatParts(p.parts))}`, p.poids && `Poids : ${esc(p.poids)}`, season && `Saison : ${esc(season.toLowerCase())}`].filter(Boolean);
   if (facts.length) detailBlocks.push(`<p class="text-[#7F7973]">${facts.join(" &nbsp;&bull;&nbsp; ")}</p>`);
 
   const detailsHtml = detailBlocks.length
@@ -315,9 +415,10 @@ function renderProductPage() {
 
   productDetail.innerHTML = `
     <nav aria-label="Fil d'Ariane" class="text-[11px] uppercase tracking-[0.18em] text-[#7F7973] mb-8 flex flex-wrap items-center gap-2">
-      <a href="/" data-nav data-cat="ALL" class="hover:text-[#2C2A29]">Accueil</a><span>&rsaquo;</span>
+      <a href="/" data-nav class="hover:text-[#2C2A29]">Accueil</a><span>&rsaquo;</span>
       ${group ? `<a href="/" data-nav data-cat="${esc(group.id)}" class="hover:text-[#2C2A29]">${esc(group.nom)}</a><span>&rsaquo;</span>` : ""}
       <span class="text-[#2C2A29]">${esc(p.nom)}</span>
+      <a href="/" data-nav data-restore class="ml-auto hover:text-[#2C2A29]">&larr; Retour aux pâtisseries</a>
     </nav>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-14 mb-14">
