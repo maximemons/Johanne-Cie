@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 300" width="100%" height="100%">
+  <style>
+    .bg { fill: #FDFBF7; }
+    .border-outer { fill: none; stroke: #2C2A29; stroke-width: 2; }
+    .border-inner { fill: none; stroke: #2C2A29; stroke-width: 0.75; }
+    .text-title { 
+      font-family: 'Times New Roman', Times, serif; 
+      font-size: 32px; 
+      fill: #2C2A29; 
+      letter-spacing: 5px; 
+      text-anchor: middle; 
+    }
+    .text-subtitle { 
+      font-family: 'Times New Roman', Times, serif; 
+      font-size: 11px; 
+      fill: #2C2A29; 
+      letter-spacing: 8px; 
+      text-anchor: middle; 
+    }
+    .text-location { 
+      font-family: 'Times New Roman', Times, serif; 
+      font-size: 10px; 
+      fill: #7F7973; 
+      letter-spacing: 6px; 
+      text-anchor: middle; 
+    }
+    .accent { stroke: #2C2A29; stroke-width: 1; }
+  </style>
+  <rect width="600" height="300" class="bg" />
+  <rect x="25" y="25" width="550" height="250" class="border-outer" />
+  <rect x="30" y="30" width="540" height="240" class="border-inner" />
+  <line x1="260" y1="75" x2="340" y2="75" class="accent" />
+  <text x="300" y="105" class="text-subtitle">MAISON</text>
+  <text x="300" y="152" class="text-title">JOHANNE &amp; CIE</text>
+  <line x1="200" y1="185" x2="400" y2="185" class="accent" />
+  <text x="300" y="215" class="text-subtitle">PÂTISSERIE FINES</text>
+  <text x="300" y="242" class="text-location">MONS — CEUNINCK</text>
+</svg>

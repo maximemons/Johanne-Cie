@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Johanne &amp; Cie — Pâtisserie Fines</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Montserrat:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="bg-[#FDFBF7] text-[#2C2A29] antialiased selection:bg-[#2C2A29] selection:text-[#FDFBF7] min-h-screen flex flex-col">
+
+  <!-- En-tête minimaliste : Logo SVG + Icône Panier -->
+  <header class="sticky top-0 z-40 bg-[#FDFBF7]/95 backdrop-blur-sm border-b border-[#2C2A29]/15">
+    <div class="max-w-6xl mx-auto px-4 sm:px-8 py-4 flex items-center justify-between gap-4">
+      <div class="w-10 hidden sm:block" aria-hidden="true"></div>
+
+      <!-- Logo SVG -->
+      <button id="nav-logo-btn" type="button" aria-label="Accueil Pâtisseries" class="mx-auto block w-full max-w-[300px] sm:max-w-[350px] focus:outline-none group transition-opacity hover:opacity-90">
+        <img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-auto" />
+      </button>
+
+      <!-- Bouton Panier -->
+      <button id="nav-cart-btn" type="button" aria-label="Panier" class="relative p-2.5 border border-[#2C2A29]/20 hover:border-[#2C2A29] transition-colors flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-[#2C2A29]" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007ZM8.625 10.5a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+        </svg>
+        <span id="cart-badge" class="hidden absolute -top-2 -right-2 bg-[#2C2A29] text-[#FDFBF7] text-[10px] font-medium w-5 h-5 rounded-full flex items-center justify-center">0</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Contenu Principal -->
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-10">
+
+    <!-- VUE 1 : PÂTISSERIES -->
+    <section id="view-patisseries" class="space-y-8">
+      <div id="categories-bar" class="flex flex-wrap items-center justify-center gap-2 sm:gap-3 border-b border-[#2C2A29]/15 pb-6">
+        <span class="text-xs uppercase tracking-[0.2em] text-[#7F7973]">Chargement de la carte...</span>
+      </div>
+
+      <div id="products-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8"></div>
+
+      <div id="empty-catalog" class="hidden text-center py-20 border border-[#2C2A29]/15 bg-white/50 px-6">
+        <p class="font-serif text-2xl text-[#2C2A29] mb-2">Aucune pâtisserie disponible pour le moment</p>
+        <p class="text-xs uppercase tracking-[0.18em] text-[#7F7973]">Revenez très bientôt découvrir la carte de la maison.</p>
+      </div>
+    </section>
+
+    <!-- VUE : FICHE PRODUIT -->
+    <section id="view-produit" class="hidden">
+      <div id="product-detail"></div>
+    </section>
+
+    <!-- VUE 2 : PANIER -->
+    <section id="view-panier" class="hidden space-y-8">
+      <div class="flex items-center justify-between border-b border-[#2C2A29]/15 pb-4">
+        <h1 class="font-serif text-3xl tracking-wide text-[#2C2A29]">Votre Panier</h1>
+        <button id="back-to-shop-btn" type="button" class="text-xs uppercase tracking-[0.2em] text-[#7F7973] hover:text-[#2C2A29] transition-colors">
+          &larr; Retour aux pâtisseries
+        </button>
+      </div>
+
+      <!-- Chargement de la session -->
+      <p id="cart-auth-loading" class="hidden text-center text-xs uppercase tracking-[0.2em] text-[#7F7973] py-16">Chargement...</p>
+
+      <!-- Accès au panier : identification obligatoire -->
+      <div id="cart-auth-gate" class="hidden max-w-md mx-auto border border-[#2C2A29] bg-white p-6 sm:p-8 space-y-5">
+        <div class="text-center space-y-1">
+          <h2 class="font-serif text-2xl">Identification requise</h2>
+          <p class="text-xs text-[#7F7973]">Connectez-vous pour accéder à votre panier.</p>
+        </div>
+
+        <button id="google-signin-btn" type="button" class="w-full py-3 px-4 border border-[#2C2A29] bg-[#FDFBF7] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors text-xs uppercase tracking-[0.18em] flex items-center justify-center gap-3">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M21.35 11.1h-9.17v2.73h6.51c-.33 3.81-3.5 5.44-6.5 5.44C8.36 19.27 5 16.25 5 12c0-4.1 3.2-7.27 7.2-7.27 3.09 0 4.9 1.97 4.9 1.97L19 4.72S16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12c0 5.05 4.13 10 10.22 10 5.35 0 9.25-3.67 9.25-9.09 0-1.15-.15-1.81-.15-1.81Z"/></svg>
+          Continuer avec Google
+        </button>
+
+        <div class="relative flex py-1 items-center">
+          <div class="flex-grow border-t border-[#2C2A29]/15"></div>
+          <span class="flex-shrink mx-3 text-[10px] uppercase tracking-[0.2em] text-[#7F7973]">ou par courriel</span>
+          <div class="flex-grow border-t border-[#2C2A29]/15"></div>
+        </div>
+
+        <form id="email-auth-form" class="space-y-3">
+          <input type="email" id="auth-email" required autocomplete="email" placeholder="Adresse e-mail" class="w-full px-3.5 py-2.5 text-sm border border-[#2C2A29]/30 bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]" />
+
+          <button id="email-link-btn" type="button" class="w-full py-2.5 px-3 bg-[#2C2A29] text-[#FDFBF7] text-[11px] uppercase tracking-[0.15em] hover:bg-[#43403E] transition-colors">
+            Recevoir un lien de connexion
+          </button>
+          <p class="text-[11px] text-[#7F7973] text-center">Sans mot de passe : un lien vous est envoyé par e-mail.</p>
+
+          <div class="relative flex py-1 items-center">
+            <div class="flex-grow border-t border-[#2C2A29]/15"></div>
+            <span class="flex-shrink mx-3 text-[10px] uppercase tracking-[0.2em] text-[#7F7973]">ou avec un mot de passe</span>
+            <div class="flex-grow border-t border-[#2C2A29]/15"></div>
+          </div>
+
+          <input type="password" id="auth-password" minlength="6" autocomplete="current-password" placeholder="Mot de passe (6 car. min.)" class="w-full px-3.5 py-2.5 text-sm border border-[#2C2A29]/30 bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]" />
+          <div class="grid grid-cols-2 gap-2">
+            <button type="submit" class="py-2.5 px-3 border border-[#2C2A29] text-[11px] uppercase tracking-[0.15em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">Se connecter</button>
+            <button type="button" id="email-register-btn" class="py-2.5 px-3 border border-[#2C2A29] text-[11px] uppercase tracking-[0.15em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">Créer un compte</button>
+          </div>
+        </form>
+        <p id="auth-info" class="hidden text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 p-3"></p>
+        <p id="auth-error" class="hidden text-xs text-red-700"></p>
+      </div>
+
+      <!-- Panier (visible une fois connecté) -->
+      <div id="cart-main" class="hidden space-y-8">
+      <div id="cart-empty-state" class="hidden text-center py-16 border border-[#2C2A29]/15 bg-white/60 px-6 space-y-5">
+        <p class="font-serif text-2xl text-[#2C2A29]">Votre panier est actuellement vide</p>
+        <button id="empty-continue-btn" type="button" class="px-6 py-3 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.2em] hover:bg-[#43403E] transition-colors">
+          Découvrir nos créations
+        </button>
+      </div>
+
+      <div id="cart-content" class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div class="lg:col-span-7 space-y-8">
+          <div class="space-y-4" id="cart-items-list"></div>
+
+          <!-- Date souhaitée pour chaque article -->
+          <div id="cart-dates-block" class="border border-[#2C2A29] bg-white p-6 sm:p-8 space-y-5">
+            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-[#2C2A29]/15 pb-4">
+              <div>
+                <h2 class="font-serif text-2xl">Pour quand ?</h2>
+                <p class="text-xs text-[#7F7973] mt-1 leading-relaxed">Choisissez la date souhaitée pour chaque création. La date du premier article est reprise par les autres tant que vous ne la modifiez pas.</p>
+              </div>
+              <button id="same-date-btn" type="button" class="hidden text-[11px] uppercase tracking-[0.15em] underline text-[#7F7973] hover:text-[#2C2A29] shrink-0">Même date pour tous</button>
+            </div>
+            <div id="cart-dates-list" class="space-y-3"></div>
+          </div>
+        </div>
+
+        <div class="lg:col-span-5 border border-[#2C2A29] p-6 sm:p-8 bg-white space-y-6">
+          <h2 class="font-serif text-2xl border-b border-[#2C2A29]/15 pb-3">Récapitulatif</h2>
+
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between text-[#7F7973]">
+              <span>Sous-total</span>
+              <span id="cart-subtotal">0,00 &euro;</span>
+            </div>
+            <div class="flex justify-between font-medium text-base pt-2 border-t border-[#2C2A29]/15">
+              <span class="uppercase tracking-[0.15em] text-xs">Total TTC</span>
+              <span id="cart-total" class="font-serif text-xl">0,00 &euro;</span>
+            </div>
+          </div>
+
+          <!-- Authentification Firebase -->
+          <div id="auth-box" class="border-t border-[#2C2A29]/15 pt-6 space-y-4">
+            <div id="auth-logged-in" class="space-y-4">
+              <div class="flex items-center justify-between bg-[#FDFBF7] p-3 border border-[#2C2A29]/15">
+                <div class="min-w-0">
+                  <p class="text-[10px] uppercase tracking-[0.2em] text-[#7F7973]">Client connecté</p>
+                  <p id="user-display-email" class="text-sm font-medium truncate text-[#2C2A29]"></p>
+                  <div id="admin-shortcut-badge" class="hidden mt-1">
+                    <a href="admin.html" class="text-[10px] uppercase tracking-[0.15em] bg-[#2C2A29] text-[#FDFBF7] px-2 py-0.5 inline-block">Accéder à l'Admin &rarr;</a>
+                  </div>
+                </div>
+                <button id="signout-btn" type="button" class="text-[11px] uppercase tracking-[0.15em] underline text-[#7F7973] hover:text-[#2C2A29] ml-3 shrink-0">
+                  Déconnexion
+                </button>
+              </div>
+
+              <div>
+                <label for="order-notes" class="block text-[11px] uppercase tracking-[0.18em] text-[#2C2A29] mb-1.5">Note pour l'atelier (optionnel)</label>
+                <textarea id="order-notes" rows="2" placeholder="Inscription, allergie..." class="w-full px-3.5 py-2 text-sm border border-[#2C2A29]/30 bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]"></textarea>
+              </div>
+
+              <button id="submit-order-btn" type="button" class="w-full py-3.5 px-4 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.22em] hover:bg-[#43403E] transition-colors">
+                Valider la commande
+              </button>
+            </div>
+          </div>
+
+          <div id="order-confirmation" class="hidden border border-[#2C2A29] bg-[#FDFBF7] p-5 space-y-2 text-center">
+            <p class="font-serif text-xl text-[#2C2A29]">Commande enregistrée</p>
+            <p class="text-xs text-[#7F7973]">Merci. Votre commande #<span id="order-id-display" class="font-medium text-[#2C2A29]"></span> a bien été transmise à la maison.</p>
+          </div>
+        </div>
+      </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Pied de page sobre -->
+  <footer class="border-t border-[#2C2A29]/15 py-6 text-center text-[11px] uppercase tracking-[0.25em] text-[#7F7973]">
+    Maison Johanne &amp; Cie &mdash; Pâtisserie Fines &mdash; Mons &mdash; Ceuninck
+  </footer>
+
+  <!-- Toast de notification -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 bg-[#2C2A29] text-[#FDFBF7] px-5 py-3 text-xs uppercase tracking-[0.18em] shadow-lg translate-y-20 opacity-0 transition-all duration-300 pointer-events-none"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+body {
+  font-family: 'Montserrat', sans-serif;
+}
+
+.font-serif {
+  font-family: 'Cormorant Garamond', 'Times New Roman', serif;
+}
+
+.product-card {
+  transition: transform 0.25s ease, border-color 0.25s ease;
+}
+
+.product-card:hover {
+  border-color: #2C2A29;
+}

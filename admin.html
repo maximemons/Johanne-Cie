@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Administration — Johanne &amp; Cie</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Montserrat:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="bg-[#FDFBF7] text-[#2C2A29] antialiased selection:bg-[#2C2A29] selection:text-[#FDFBF7] min-h-screen flex flex-col">
+
+  <header class="border-b border-[#2C2A29]/15 bg-[#FDFBF7]">
+    <div class="max-w-6xl mx-auto px-4 sm:px-8 py-4 flex items-center justify-between gap-4">
+      <a href="index.html" class="block w-40 sm:w-48" aria-label="Retour à la boutique"><img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-auto" /></a>
+      <div class="flex items-center gap-3">
+        <span id="admin-user-badge" class="hidden sm:inline text-xs text-[#7F7973]"></span>
+        <a href="index.html" class="px-4 py-2 border border-[#2C2A29] text-xs uppercase tracking-[0.18em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">Boutique</a>
+        <button id="signout-btn" type="button" class="hidden text-[11px] uppercase tracking-[0.15em] underline text-[#7F7973] hover:text-[#2C2A29]">Déconnexion</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-10">
+
+    <!-- Verrouillage -->
+    <section id="admin-locked" class="max-w-md mx-auto py-12 text-center space-y-6 border border-[#2C2A29]/15 bg-white p-8">
+      <h1 class="font-serif text-3xl">Espace Restreint</h1>
+      <p id="admin-lock-msg" class="text-xs text-[#7F7973] leading-relaxed">Connectez-vous avec Google ou par lien e-mail avec l'adresse de l'administrateur.</p>
+      <button id="admin-login-google" type="button" class="w-full py-3 px-4 border border-[#2C2A29] bg-[#FDFBF7] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors text-xs uppercase tracking-[0.18em]">Se connecter avec Google</button>
+      <div class="relative flex py-1 items-center">
+        <div class="flex-grow border-t border-[#2C2A29]/15"></div>
+        <span class="flex-shrink mx-3 text-[10px] uppercase tracking-[0.2em] text-[#7F7973]">ou par lien e-mail</span>
+        <div class="flex-grow border-t border-[#2C2A29]/15"></div>
+      </div>
+      <form id="admin-email-form" class="space-y-3">
+        <input type="email" id="admin-email" required autocomplete="email" placeholder="Adresse e-mail administrateur" class="inp" />
+        <button type="submit" class="w-full py-3 px-4 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.18em] hover:bg-[#43403E] transition-colors">Recevoir un lien de connexion</button>
+      </form>
+      <p id="admin-info" class="hidden text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 p-3"></p>
+    </section>
+
+    <!-- Tableau de bord -->
+    <section id="admin-dashboard" class="hidden space-y-10">
+      <div>
+        <span class="text-[10px] uppercase tracking-[0.25em] text-[#7F7973]">Administration Atelier</span>
+        <h1 class="font-serif text-3xl sm:text-4xl mt-1">Gestion de la Maison</h1>
+      </div>
+
+      <nav class="flex border-b border-[#2C2A29]/15 gap-6 sm:gap-8 overflow-x-auto">
+        <button type="button" data-tab="commandes" class="tab-btn pb-3 text-xs uppercase tracking-[0.2em] whitespace-nowrap border-b-2">Commandes <span id="pending-badge" class="hidden ml-1 bg-[#2C2A29] text-[#FDFBF7] text-[10px] px-1.5 py-0.5 rounded-full align-middle">0</span></button>
+        <button type="button" data-tab="patisseries" class="tab-btn pb-3 text-xs uppercase tracking-[0.2em] whitespace-nowrap border-b-2">Pâtisseries &amp; Stocks</button>
+        <button type="button" data-tab="categories" class="tab-btn pb-3 text-xs uppercase tracking-[0.2em] whitespace-nowrap border-b-2">Catégories</button>
+      </nav>
+
+      <!-- COMMANDES -->
+      <div id="tab-commandes" class="space-y-6">
+        <div class="flex flex-wrap items-end justify-between gap-4">
+          <h2 class="font-serif text-2xl">Commandes clients</h2>
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="flex border border-[#2C2A29]/25 text-[11px] uppercase tracking-[0.15em]">
+              <button type="button" data-order-view="commande" class="order-view-btn px-3 py-2">Par commande</button>
+              <button type="button" data-order-view="jour" class="order-view-btn px-3 py-2">Par jour</button>
+            </div>
+            <select id="order-filter" class="px-3 py-2 text-xs border border-[#2C2A29]/30 bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]"></select>
+          </div>
+        </div>
+        <div id="orders-list" class="space-y-4"></div>
+      </div>
+
+      <!-- PÂTISSERIES -->
+      <div id="tab-patisseries" class="hidden space-y-8">
+        <div class="bg-white border border-[#2C2A29]/15 p-6 sm:p-8">
+          <h2 id="product-form-title" class="font-serif text-2xl mb-6">Ajouter une pâtisserie</h2>
+          <form id="product-form" class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <input type="hidden" id="prod-edit-id" />
+            <div>
+              <label class="lbl" for="prod-nom">Nom de la création</label>
+              <input type="text" id="prod-nom" required placeholder="Ex : Saint-Honoré Vanille" class="inp" />
+            </div>
+            <div>
+              <label class="lbl" for="prod-categorie">Catégorie</label>
+              <select id="prod-categorie" class="inp"></select>
+            </div>
+            <div>
+              <label class="lbl" for="prod-prix">Prix (&euro;)</label>
+              <input type="number" step="0.01" min="0" id="prod-prix" required placeholder="38.00" class="inp" />
+            </div>
+            <div>
+              <label class="lbl" for="prod-statut">Stock</label>
+              <select id="prod-statut" class="inp">
+                <option value="Disponible">Disponible</option>
+                <option value="Épuisé">Épuisé</option>
+                <option value="Hors-Saison">Hors-Saison (retirée manuellement)</option>
+              </select>
+            </div>
+            <div class="sm:col-span-2 border border-[#2C2A29]/15 p-4 space-y-3 bg-[#FDFBF7]">
+              <label class="lbl" for="prod-saison-mode">Saisonnalité</label>
+              <select id="prod-saison-mode" class="inp">
+                <option value="toujours">Toute l'année</option>
+                <option value="periode">Uniquement sur une période</option>
+              </select>
+              <div id="prod-saison-range" class="hidden grid grid-cols-2 gap-4">
+                <div><label class="lbl" for="prod-saison-debut">Du mois de</label><select id="prod-saison-debut" class="inp"></select></div>
+                <div><label class="lbl" for="prod-saison-fin">Au mois de</label><select id="prod-saison-fin" class="inp"></select></div>
+                <p class="col-span-2 text-xs text-[#7F7973]">Hors de cette période, la création est automatiquement indisponible (et non commandable pour une date hors-saison). Les périodes à cheval sur deux années fonctionnent (ex. novembre → février).</p>
+              </div>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="lbl" for="prod-image">Image principale (URL, optionnel)</label>
+              <input type="url" id="prod-image" placeholder="https://..." class="inp" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="lbl" for="prod-images">Images supplémentaires (une URL par ligne)</label>
+              <textarea id="prod-images" rows="2" placeholder="https://...&#10;https://..." class="inp"></textarea>
+              <p class="text-xs text-[#7F7973] mt-1">Elles forment la galerie de la fiche produit, avec l'image principale en premier.</p>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="lbl" for="prod-desc">Description courte</label>
+              <textarea id="prod-desc" rows="2" placeholder="Affichée sur la carte et en haut de la fiche..." class="inp"></textarea>
+            </div>
+
+            <fieldset class="sm:col-span-2 border border-[#2C2A29]/15 p-4 space-y-4 bg-[#FDFBF7]">
+              <legend class="px-2 text-[11px] uppercase tracking-[0.18em]">Fiche produit (détails)</legend>
+              <div>
+                <label class="lbl" for="prod-conservation">Avertissement / conservation</label>
+                <input type="text" id="prod-conservation" placeholder="Ex : À consommer le jour de l'achat" class="inp" />
+              </div>
+              <div>
+                <label class="lbl" for="prod-composition">Composition</label>
+                <textarea id="prod-composition" rows="3" placeholder="Ex : Pâte feuilletée caramélisée, petits choux garnis à la vanille surmontés de chantilly vanillée." class="inp"></textarea>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div><label class="lbl" for="prod-parts">Nombre de parts</label><input type="text" id="prod-parts" placeholder="Ex : 4 parts" class="inp" /></div>
+                <div><label class="lbl" for="prod-poids">Poids</label><input type="text" id="prod-poids" placeholder="Ex : 560 g" class="inp" /></div>
+              </div>
+              <div>
+                <span class="lbl">Allergènes présents</span>
+                <div id="prod-allergenes" class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-sm"></div>
+              </div>
+            </fieldset>
+            <div class="sm:col-span-2 flex gap-4">
+              <button type="submit" id="prod-submit-btn" class="px-6 py-3 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.2em] hover:bg-[#43403E] transition-colors">Enregistrer la pâtisserie</button>
+              <button type="button" id="prod-cancel-edit" class="hidden px-6 py-3 border border-[#2C2A29] text-xs uppercase tracking-[0.2em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">Annuler</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="space-y-4">
+          <div class="flex flex-wrap items-end justify-between gap-4">
+            <h3 class="font-serif text-2xl">Catalogue actuel</h3>
+            <div class="flex flex-wrap gap-3">
+              <input type="search" id="prod-search" placeholder="Rechercher..." class="px-3 py-2 text-xs border border-[#2C2A29]/30 bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]" />
+              <select id="prod-filter-cat" class="px-3 py-2 text-xs border border-[#2C2A29]/30 bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]"></select>
+            </div>
+          </div>
+          <div id="admin-products-list" class="grid grid-cols-1 md:grid-cols-2 gap-5"></div>
+        </div>
+      </div>
+
+      <!-- CATÉGORIES -->
+      <div id="tab-categories" class="hidden space-y-8">
+        <div class="bg-white border border-[#2C2A29]/15 p-6 sm:p-8 max-w-xl">
+          <h2 class="font-serif text-2xl mb-6">Ajouter une catégorie</h2>
+          <form id="category-form" class="space-y-4">
+            <div>
+              <label class="lbl" for="cat-nom">Nom de la catégorie</label>
+              <input type="text" id="cat-nom" required placeholder="Ex : Entremets" class="inp" />
+            </div>
+            <div>
+              <label class="lbl" for="cat-ordre">Ordre d'affichage</label>
+              <input type="number" id="cat-ordre" value="1" required class="inp" />
+            </div>
+            <button type="submit" class="px-6 py-3 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.2em] hover:bg-[#43403E] transition-colors">Créer la catégorie</button>
+          </form>
+        </div>
+        <div class="space-y-4">
+          <h3 class="font-serif text-2xl">Catégories existantes</h3>
+          <p class="text-xs text-[#7F7973] max-w-2xl leading-relaxed">Une catégorie supprimée ou masquée n'apparaît plus en boutique : les pâtisseries qui y sont rattachées passent automatiquement dans « Autre », toujours affichée en dernier.</p>
+          <div id="admin-categories-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-[#2C2A29]/15 py-6 text-center text-[11px] uppercase tracking-[0.25em] text-[#7F7973]">Johanne &amp; Cie &mdash; Administration</footer>
+  <div id="toast" class="fixed bottom-6 right-6 z-50 bg-[#2C2A29] text-[#FDFBF7] px-5 py-3 text-xs uppercase tracking-[0.18em] shadow-lg translate-y-20 opacity-0 transition-all duration-300 pointer-events-none"></div>
+
+  <style>
+    .lbl { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.18em; margin-bottom:.375rem; }
+    .inp { width:100%; padding:.625rem .875rem; font-size:.875rem; border:1px solid rgba(44,42,41,.3); background:#FDFBF7; }
+    .inp:focus { outline:none; border-color:#2C2A29; }
+    .tab-btn { border-color:transparent; color:#7F7973; }
+    .tab-btn.is-active { border-color:#2C2A29; color:#2C2A29; font-weight:500; }
+    .order-view-btn.is-active { background:#2C2A29; color:#FDFBF7; }
+  </style>
+
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>
