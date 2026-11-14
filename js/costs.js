@@ -155,3 +155,22 @@ export function lineChartSVG({ points, ref = null, fmt = String, today = todayIS
     ${dots}
   </svg>`;
 }
+
+// ---------- Prix de vente suggéré à partir du prix de revient ----------
+export const MAX_MARKUP_PCT = 40;
+
+/**
+ * Prix de vente maximal : revient + 40 %, arrondi au 0,50 € INFÉRIEUR (jamais au-dessus du plafond),
+ * donc toujours en « ,00 » ou « ,50 ». Calcul en centimes entiers pour éviter les erreurs de virgule flottante.
+ * Retourne null si aucun prix rond ne tient dans [revient ; revient + 40 %] (revient minuscule).
+ */
+export function suggestSellingPrice(cost, maxMarkupPct = MAX_MARKUP_PCT, stepCents = 50) {
+  const cents = Math.round(Number(cost) * 100);
+  if (!(cents > 0)) return null;
+  const maxCents = Math.floor((cents * (100 + maxMarkupPct)) / 100);
+  const priceCents = Math.floor(maxCents / stepCents) * stepCents;
+  return priceCents >= cents ? priceCents / 100 : null;
+}
+
+/** Majoration d'un prix de vente par rapport au revient, en % (ex. 20 € pour 14,50 € → +37,9 %). */
+export const markupPct = (price, cost) => (cost > 0 && price >= 0 ? (price / cost - 1) * 100 : null);

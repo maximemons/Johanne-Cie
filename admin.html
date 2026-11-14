@@ -221,6 +221,12 @@
   </main>
 
   <footer class="border-t border-[#2C2A29]/15 py-6 text-center text-[11px] uppercase tracking-[0.25em] text-[#7F7973]">Maison Johanne &amp; Cie &mdash; Administration</footer>
+  <!-- Popup : proposition de prix de vente après saisie d'un prix de revient -->
+  <div id="price-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="price-modal-title">
+    <div data-action="price-skip" class="absolute inset-0 bg-[#2C2A29]/50"></div>
+    <div id="price-modal-body" class="relative w-full max-w-md bg-[#FDFBF7] border border-[#2C2A29] p-6 sm:p-8 space-y-5 shadow-xl"></div>
+  </div>
+
   <div id="toast" class="fixed bottom-6 right-6 z-50 bg-[#2C2A29] text-[#FDFBF7] px-5 py-3 text-xs uppercase tracking-[0.18em] shadow-lg translate-y-20 opacity-0 transition-all duration-300 pointer-events-none"></div>
 
   <style>

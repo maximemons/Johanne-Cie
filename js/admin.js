@@ -6,7 +6,8 @@ import {
 } from "./catalog.js";
 import {
   currentCost, sortHistory, upsertEntry, removeEntry, marginOf, lastChange, pctChange,
-  formatPct, formatNum, formatDateShort, globalIndexSeries, lineChartSVG
+  formatPct, formatNum, formatDateShort, globalIndexSeries, lineChartSVG,
+  suggestSellingPrice, markupPct, MAX_MARKUP_PCT
 } from "./costs.js";
 import {
   collection, onSnapshot, addDoc, updateDoc, setDoc, deleteDoc, doc, serverTimestamp
@@ -368,13 +369,16 @@ productForm.addEventListener("submit", (e) => {
   if (revient !== null && !(revient >= 0)) return toast("Prix de revient invalide");
   run(async () => {
     let pid = id;
+    let offer = null;
     if (id) await updateDoc(doc(db, "patisseries", id), data);
     else pid = (await addDoc(collection(db, "patisseries"), { ...data, createdAt: serverTimestamp() })).id;
     // Un prix de revient modifié s'ajoute à l'historique (daté d'aujourd'hui)
     if (revient !== null && revient !== currentCost(state.couts[pid]?.historique)) {
-      await saveCost(pid, revient, todayISO());
+      const { isCurrent } = await saveCost(pid, revient, todayISO());
+      if (isCurrent) offer = { id: pid, nom: data.nom, cout: revient, prix: data.prix };
     }
     resetProductForm();
+    if (offer) offerSellingPrice(offer); // popup : valider le prix de vente suggéré
   }, id ? "Pâtisserie mise à jour" : "Pâtisserie ajoutée", "Erreur lors de l'enregistrement");
 });
 
@@ -573,6 +577,10 @@ document.addEventListener("click", (e) => {
         if (hasCost) await deleteDoc(doc(db, "couts", id));
       }, "Pâtisserie supprimée", "Erreur lors de la suppression");
     }
+  } else if (action === "price-apply") {
+    applySellingPrice();
+  } else if (action === "price-skip") {
+    closePriceModal();
   } else if (action === "prod-cost" || action === "cost-open") {
     openCost(id);
   } else if (action === "cost-close") {
@@ -620,9 +628,12 @@ const costOf = (id) => currentCost(state.couts[id]?.historique);
 
 const writeCost = (id, historique) => setDoc(doc(db, "couts", id), { historique, updatedAt: serverTimestamp() });
 
-function saveCost(id, valeur, date, note = "") {
+// Retourne { isCurrent } : le relevé est-il le plus récent ? (un relevé saisi avec une date passée ne change pas le revient actuel)
+async function saveCost(id, valeur, date, note = "") {
   const entry = { date, valeur, ...(note ? { note } : {}) };
-  return writeCost(id, upsertEntry(state.couts[id]?.historique, entry));
+  const historique = upsertEntry(state.couts[id]?.historique, entry);
+  await writeCost(id, historique);
+  return { isCurrent: historique.at(-1).date === date };
 }
 
 function openCost(id) {
@@ -642,9 +653,12 @@ document.addEventListener("submit", (e) => {
   if (raw === "" || !(valeur >= 0)) return toast("Prix de revient invalide");
   if (!date || date > todayISO()) return toast("Date invalide");
   run(async () => {
-    await saveCost(state.costProduct, valeur, date, $("cost-note").value.trim());
+    const id = state.costProduct;
+    const { isCurrent } = await saveCost(id, valeur, date, $("cost-note").value.trim());
     $("cost-valeur").value = "";
     $("cost-note").value = "";
+    const p = state.products.find((x) => x.id === id);
+    if (isCurrent && p) offerSellingPrice({ id, nom: p.nom, cout: valeur, prix: p.prix });
   }, "Prix de revient enregistré", "Erreur lors de l'enregistrement");
 });
 
@@ -792,3 +806,62 @@ function renderCostPanel() {
   $("cost-date").value = keep?.[1] || todayISO();
   if (keep) { $("cost-valeur").value = keep[0]; $("cost-note").value = keep[2]; }
 }
+
+
+// =============================================================
+// POPUP : prix de vente suggéré (revient + 40 % max, arrondi au 0,50 inférieur)
+// =============================================================
+let priceProposal = null;
+let focusBeforeModal = null;
+
+function offerSellingPrice({ id, nom, cout, prix }) {
+  const suggere = suggestSellingPrice(cout);
+  if (suggere == null) return; // aucun prix rond possible (revient minuscule)
+  const actuel = Number(prix);
+  if (Math.round(suggere * 100) === Math.round(actuel * 100)) return; // déjà au bon prix : rien à proposer
+  priceProposal = { id, suggere };
+
+  const plafond = cout * (1 + MAX_MARKUP_PCT / 100);
+  const m = marginOf(suggere, cout);
+  const depasse = Math.round(actuel * 100) > Math.floor(plafond * 100 + 1e-6);
+  const maj = (v) => { const x = markupPct(v, cout); return x == null ? "" : ` <span class="text-xs text-[#7F7973]">(${formatPct(x, true)})</span>`; };
+
+  $("price-modal-body").innerHTML = `
+    <div class="space-y-1">
+      <h3 id="price-modal-title" class="font-serif text-2xl">Ajuster le prix de vente ?</h3>
+      <p class="text-sm text-[#7F7973]">Nouveau prix de revient de <strong class="text-[#2C2A29]">« ${esc(nom)} »</strong> : ${formatPrice(cout)}.</p>
+    </div>
+    <div class="border border-[#2C2A29]/15 bg-white divide-y divide-[#2C2A29]/10 text-sm">
+      <div class="flex items-baseline justify-between gap-3 p-3"><span class="text-[#7F7973]">Prix de vente actuel</span><span>${Number.isFinite(actuel) ? formatPrice(actuel) : "—"}${Number.isFinite(actuel) ? maj(actuel) : ""}</span></div>
+      <div class="flex items-baseline justify-between gap-3 p-3"><span class="font-medium">Prix proposé</span><span class="font-serif text-2xl">${formatPrice(suggere)}${maj(suggere)}</span></div>
+    </div>
+    ${depasse ? `<p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-3">Le prix actuel dépasse le plafond de +${MAX_MARKUP_PCT} % par rapport au prix de revient.</p>` : ""}
+    <p class="text-xs text-[#7F7973] leading-relaxed">Règle : prix de revient + ${MAX_MARKUP_PCT} % au maximum (${formatPrice(plafond)}), arrondi au 0,50 € inférieur.${m ? ` Marge : ${formatPrice(m.eur)} (${formatPct(m.pct)} du prix de vente).` : ""}</p>
+    <div class="flex flex-col-reverse sm:flex-row gap-3">
+      <button type="button" data-action="price-skip" class="flex-1 px-4 py-3 border border-[#2C2A29] text-xs uppercase tracking-[0.15em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">Garder ${Number.isFinite(actuel) ? formatPrice(actuel) : "le prix"}</button>
+      <button type="button" id="price-apply-btn" data-action="price-apply" class="flex-1 px-4 py-3 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.15em] hover:bg-[#43403E] transition-colors">Valider ${formatPrice(suggere)}</button>
+    </div>`;
+
+  focusBeforeModal = document.activeElement;
+  $("price-modal").classList.remove("hidden");
+  $("price-apply-btn").focus();
+}
+
+function closePriceModal() {
+  priceProposal = null;
+  $("price-modal").classList.add("hidden");
+  $("price-modal-body").innerHTML = "";
+  focusBeforeModal?.focus?.();
+  focusBeforeModal = null;
+}
+
+function applySellingPrice() {
+  if (!priceProposal) return;
+  const { id, suggere } = priceProposal;
+  closePriceModal();
+  run(() => updateDoc(doc(db, "patisseries", id), { prix: suggere }), `Prix de vente mis à jour : ${formatPrice(suggere)}`, "Erreur lors de la mise à jour du prix");
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("price-modal").classList.contains("hidden")) closePriceModal();
+});
