@@ -116,7 +116,7 @@ export const EMAIL_LINK_KEY = "johanne_email_for_signin";
 // ---------- Fiche produit ----------
 // Les 14 allergènes à déclaration obligatoire (UE)
 export const ALLERGENES = [
-  "Gluten", "Crustacés", "Œufs", "Poissons", "Arachides", "Soja", "Lait",
+  "Gluten", "Crustacés", "Œufs", "Poissons", "Arachides", "Soja", "Lait", "Alcool",
   "Fruits à coque", "Céleri", "Moutarde", "Sésame", "Sulfites", "Lupin", "Mollusques"
 ];
 
