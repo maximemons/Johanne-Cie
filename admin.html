@@ -16,7 +16,7 @@
 
   <header class="border-b border-[#2C2A29]/15 bg-[#FDFBF7]">
     <div class="max-w-6xl mx-auto px-4 sm:px-8 py-4 flex items-center justify-between gap-4">
-      <a href="index.html" class="block w-40 sm:w-48" aria-label="Retour à la boutique"><img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-auto"/></a>
+      <a href="index.html" class="block w-40 sm:w-48" aria-label="Retour à la boutique"><img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-auto" /></a>
       <div class="flex items-center gap-3">
         <span id="admin-user-badge" class="hidden sm:inline text-xs text-[#7F7973]"></span>
         <a href="index.html" class="px-4 py-2 border border-[#2C2A29] text-xs uppercase tracking-[0.18em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">Boutique</a>
@@ -55,6 +55,7 @@
         <button type="button" data-tab="commandes" class="tab-btn pb-3 text-xs uppercase tracking-[0.2em] whitespace-nowrap border-b-2">Commandes <span id="pending-badge" class="hidden ml-1 bg-[#2C2A29] text-[#FDFBF7] text-[10px] px-1.5 py-0.5 rounded-full align-middle">0</span></button>
         <button type="button" data-tab="patisseries" class="tab-btn pb-3 text-xs uppercase tracking-[0.2em] whitespace-nowrap border-b-2">Pâtisseries &amp; Stocks</button>
         <button type="button" data-tab="categories" class="tab-btn pb-3 text-xs uppercase tracking-[0.2em] whitespace-nowrap border-b-2">Catégories</button>
+        <button type="button" data-tab="couts" class="tab-btn pb-3 text-xs uppercase tracking-[0.2em] whitespace-nowrap border-b-2">Prix de revient</button>
       </nav>
 
       <!-- COMMANDES -->
@@ -97,6 +98,22 @@
                 <option value="Épuisé">Épuisé</option>
                 <option value="Hors-Saison">Hors-Saison (retirée manuellement)</option>
               </select>
+            </div>
+            <div>
+              <label class="lbl" for="prod-revient">Prix de revient (&euro;) &mdash; privé</label>
+              <input type="number" step="0.01" min="0" id="prod-revient" placeholder="Ex : 14.50" class="inp" />
+              <p class="text-xs text-[#7F7973] mt-1">Jamais visible des clients. Une modification est ajoutée à l'historique (onglet « Prix de revient »).</p>
+            </div>
+            <div class="sm:col-span-2 border border-[#2C2A29]/15 p-4 space-y-3 bg-[#FDFBF7]">
+              <span class="lbl">Le prix correspond à</span>
+              <div class="grid grid-cols-3 gap-4">
+                <div><label class="lbl" for="prod-pour-nombre">Nombre</label><input type="number" min="1" step="1" id="prod-pour-nombre" placeholder="Ex : 4" class="inp" /></div>
+                <div><label class="lbl" for="prod-pour-max">Jusqu'à (optionnel)</label><input type="number" min="1" step="1" id="prod-pour-max" placeholder="Ex : 6" class="inp" /></div>
+                <div><label class="lbl" for="prod-pour-unite">Unité</label>
+                  <select id="prod-pour-unite" class="inp"><option value="personnes">Personnes</option><option value="pieces">Pièces</option></select>
+                </div>
+              </div>
+              <p class="text-xs text-[#7F7973]">Affiché à côté du prix sur la carte et sur la fiche : « Pour 4 personnes », « Pour 6 à 8 personnes », « Pour 12 pièces ». Laissez « Nombre » vide pour ne rien afficher.</p>
             </div>
             <div class="sm:col-span-2 border border-[#2C2A29]/15 p-4 space-y-3 bg-[#FDFBF7]">
               <label class="lbl" for="prod-saison-mode">Saisonnalité</label>
@@ -184,10 +201,26 @@
           <div id="admin-categories-list" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
         </div>
       </div>
+
+      <!-- PRIX DE REVIENT (privé) -->
+      <div id="tab-couts" class="hidden space-y-8">
+        <div class="space-y-2">
+          <h2 class="font-serif text-2xl">Prix de revient</h2>
+          <p class="text-xs text-[#7F7973] max-w-2xl leading-relaxed">Données privées, stockées dans une collection réservée à l'administrateur : elles ne sont jamais envoyées à la boutique. Chaque modification est conservée avec sa date pour suivre l'évolution de vos coûts.</p>
+          <p id="costs-error" class="hidden text-xs text-red-700">Lecture des prix de revient refusée. Déployez les règles Firestore (firestore.rules) : la collection « couts » doit y figurer.</p>
+        </div>
+        <div id="costs-summary" class="grid grid-cols-1 sm:grid-cols-3 gap-4"></div>
+        <div id="costs-panel" class="hidden"></div>
+        <div class="bg-white border border-[#2C2A29]/15 p-5 sm:p-6 space-y-3">
+          <h3 class="font-serif text-xl">Évolution globale des coûts</h3>
+          <div id="costs-global"></div>
+        </div>
+        <div id="costs-table"></div>
+      </div>
     </section>
   </main>
 
-  <footer class="border-t border-[#2C2A29]/15 py-6 text-center text-[11px] uppercase tracking-[0.25em] text-[#7F7973]">Johanne &amp; Cie &mdash; Administration</footer>
+  <footer class="border-t border-[#2C2A29]/15 py-6 text-center text-[11px] uppercase tracking-[0.25em] text-[#7F7973]">Maison Johanne &amp; Cie &mdash; Administration</footer>
   <div id="toast" class="fixed bottom-6 right-6 z-50 bg-[#2C2A29] text-[#FDFBF7] px-5 py-3 text-xs uppercase tracking-[0.18em] shadow-lg translate-y-20 opacity-0 transition-all duration-300 pointer-events-none"></div>
 
   <style>

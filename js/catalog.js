@@ -137,3 +137,15 @@ export function formatParts(v) {
   if (/^\d+$/.test(t)) return `${t} part${Number(t) > 1 ? "s" : ""}`;
   return t;
 }
+
+// ---------- Ce que couvre le prix : "4 personnes", "6 à 8 personnes", "12 pièces", "1 pièce" ----------
+const UNITES = { personnes: ["personne", "personnes"], pieces: ["pièce", "pièces"] };
+
+export function formatPrixPour(pp) {
+  const n = Number(pp?.nombre);
+  if (!(n >= 1)) return "";
+  const max = Number(pp.nombreMax);
+  const hasRange = max > n;
+  const [singulier, pluriel] = UNITES[pp.unite === "pieces" ? "pieces" : "personnes"];
+  return `${hasRange ? `${n} à ${max}` : n} ${(hasRange ? max : n) > 1 ? pluriel : singulier}`;
+}

@@ -13,3 +13,43 @@ body {
 .product-card:hover {
   border-color: #2C2A29;
 }
+
+/* Une ligne horizontale de cartes par catégorie (cartes de même taille qu'une grille 3 colonnes) */
+.row-section { position: relative; }
+
+.row-scroller {
+  display: flex;
+  gap: 2rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  padding: 0.5rem 0 1rem;
+  margin-top: -0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: #2C2A29 transparent;
+}
+
+.row-card { flex: 0 0 85%; scroll-snap-align: start; }
+@media (min-width: 640px)  { .row-card { flex-basis: calc((100% - 2rem) / 2); } }
+@media (min-width: 1024px) { .row-card { flex-basis: calc((100% - 4rem) / 3); } }
+
+.row-arrow {
+  display: none;
+  position: absolute;
+  top: 30%;
+  z-index: 5;
+  width: 2.5rem;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  background: #FDFBF7;
+  border: 1px solid #2C2A29;
+  color: #2C2A29;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.row-arrow:hover { background: #2C2A29; color: #FDFBF7; }
+.row-arrow[data-on] { display: flex; }
+.row-arrow-prev { left: -0.5rem; }
+.row-arrow-next { right: -0.5rem; }
+@media (max-width: 639px) { .row-arrow { display: none !important; } }

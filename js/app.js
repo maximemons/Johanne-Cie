@@ -5,7 +5,7 @@ import {
 } from "./cart.js";
 import {
   ADMIN_EMAIL, EMAIL_LINK_KEY, esc, formatPrice, tomorrowISO, parseISODate,
-  getAvailability, groupByCategory, seasonLabel, productImages, productUrl, formatParts
+  getAvailability, groupByCategory, seasonLabel, productImages, productUrl, formatParts, formatPrixPour
 } from "./catalog.js";
 import {
   collection, onSnapshot, addDoc, serverTimestamp
@@ -21,6 +21,7 @@ const state = {
   products: [],
   activeCategory: null,   // catégorie en cours (scrollspy)
   indexPos: null,         // position de scroll de la liste, mémorisée quand on la quitte
+  rowPos: {},             // défilement horizontal de chaque ligne de catégorie, mémorisé de la même façon
   cart: loadCart(),
   user: null,
   authReady: false,
@@ -94,7 +95,10 @@ function handleRouting() {
 
 function switchView(name, intent = {}) {
   const wasIndex = state.currentView === "patisseries";
-  if (wasIndex && name !== "patisseries") state.indexPos = window.scrollY; // on retient où l'on était
+  if (wasIndex && name !== "patisseries") {
+    state.indexPos = window.scrollY; // on retient où l'on était
+    captureRowPositions();
+  }
 
   state.currentView = name;
   viewPatisseries.classList.toggle("hidden", name !== "patisseries");
@@ -106,13 +110,17 @@ function switchView(name, intent = {}) {
   if (name === "patisseries") {
     syncStickyOffsets();
     if (intent.cat) {
+      state.rowPos = {};
       scrollToCategory(intent.cat, "auto");
     } else if (!intent.top && state.indexPos != null) {
       // Retour depuis une fiche produit / le panier : on retrouve la position précédente
       window.scrollTo({ top: state.indexPos, behavior: "auto" });
+      restoreRowPositions();
     } else {
+      state.rowPos = {};
       window.scrollTo({ top: 0, behavior: wasIndex ? "smooth" : "auto" });
     }
+    updateRowArrows(); // une vue masquée a des dimensions nulles : on recalcule les flèches à l'affichage
     updateActiveCategory(true);
     return;
   }
@@ -123,7 +131,8 @@ function switchView(name, intent = {}) {
     state.galleryIndex = 0;
     renderProductPage();
   }
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  // Instantané (pas d'animation) : une animation encore en cours fausserait la restauration si l'on revient vite
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 
 function go(path, intent = null) {
@@ -213,6 +222,7 @@ function setActiveCategory(id) {
   });
 }
 
+// Catégorie en cours = dernière ligne dont le haut a passé la ligne située sous la barre fixe
 function updateActiveCategory(force = false) {
   if (state.currentView !== "patisseries" || (spyLocked && !force)) return;
   const sections = [...productsGrid.querySelectorAll("section[data-cat-section]")];
@@ -222,7 +232,7 @@ function updateActiveCategory(force = false) {
   for (const sec of sections) {
     if (sec.getBoundingClientRect().top <= line) current = sec.dataset.catSection;
   }
-  // en bas de page, la dernière catégorie (parfois courte) devient la catégorie en cours
+  // en bas de page, la dernière ligne (parfois courte) devient la catégorie en cours
   if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
     current = sections[sections.length - 1].dataset.catSection;
   }
@@ -251,14 +261,15 @@ categoriesBar.addEventListener("click", (e) => {
   if (btn) scrollToCategory(btn.dataset.catId);
 });
 
-function productCard(p) {
+function productCard(p, catLabel) {
   const av = getAvailability(p);
   const off = !av.available;
   const season = seasonLabel(p.saison);
   const parts = formatParts(p.parts);
+  const pour = formatPrixPour(p.prixPour);
   const img = p.imageUrl
     ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${off ? "grayscale opacity-75" : ""}" loading="lazy" />`
-    : `<img src="assets/logo.svg" alt="Johanne &amp; Cie" class="w-full h-full object-contain p-6 bg-[#FDFBF7] opacity-80" />`;
+    : `<img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-full object-contain p-6 bg-[#FDFBF7] opacity-80" />`;
   const badge = off
     ? `<span class="absolute top-3 right-3 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>`
     : "";
@@ -267,14 +278,18 @@ function productCard(p) {
     : `<button type="button" data-add-id="${esc(p.id)}" class="w-full py-2.5 px-4 bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E] transition-colors text-[11px] uppercase tracking-[0.2em]">Ajouter au panier</button>`;
 
   return `
-    <article class="product-card border border-[#2C2A29]/15 bg-white flex flex-col justify-between">
+    <article class="row-card product-card border border-[#2C2A29]/15 bg-white flex flex-col justify-between">
       <div>
         <a href="${productUrl(p.id)}" data-nav class="block relative aspect-[4/3] overflow-hidden border-b border-[#2C2A29]/10 bg-[#F4F0E8]" aria-label="Voir ${esc(p.nom)}">${img}${badge}</a>
-        ${parts ? `<p class="px-6 pt-3 text-[10px] uppercase tracking-[0.22em] text-[#7F7973]">${esc(parts)}</p>` : ""}
-        <div class="px-6 pb-6 ${parts ? "pt-1" : "pt-6"} space-y-2">
+        ${parts ? `<p class="px-6 pt-3 text-[10px] uppercase tracking-[0.22em] text-[#2C2A29]">${esc(parts)}</p>` : ""}
+        <div class="${parts ? "px-6 pb-6 pt-2" : "p-6"} space-y-2">
+          <p class="text-[10px] uppercase tracking-[0.22em] text-[#7F7973]">${esc(catLabel)}</p>
           <div class="flex items-baseline justify-between gap-3">
-            <h3 class="font-serif text-2xl text-[#2C2A29] leading-snug"><a href="${productUrl(p.id)}" data-nav class="hover:underline underline-offset-4">${esc(p.nom || "Pâtisserie")}</a></h3>
-            <span class="font-serif text-lg text-[#2C2A29] shrink-0">${formatPrice(p.prix)}</span>
+            <h2 class="font-serif text-2xl text-[#2C2A29] leading-snug"><a href="${productUrl(p.id)}" data-nav class="hover:underline underline-offset-4">${esc(p.nom || "Pâtisserie")}</a></h2>
+            <div class="shrink-0 text-right">
+              <span class="font-serif text-lg text-[#2C2A29]">${formatPrice(p.prix)}</span>
+              ${pour ? `<span class="block text-[10px] uppercase tracking-[0.15em] text-[#7F7973] whitespace-nowrap">Pour ${esc(pour)}</span>` : ""}
+            </div>
           </div>
           ${season ? `<p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
           ${p.description ? `<p class="text-xs text-[#7F7973] leading-relaxed pt-1">${esc(p.description)}</p>` : ""}
@@ -285,7 +300,7 @@ function productCard(p) {
     </article>`;
 }
 
-// Liste triée par catégorie ("Autre" toujours en dernier) : une section-ancre par catégorie
+// Une ligne horizontale par catégorie ("Autre" toujours en dernier), cartes toutes de même taille
 function renderProducts() {
   if (state.products.length === 0) {
     productsGrid.innerHTML = "";
@@ -294,6 +309,9 @@ function renderProducts() {
   }
   emptyCatalog.classList.add("hidden");
 
+  const visible = state.currentView === "patisseries";
+  if (visible) captureRowPositions(); // un re-rendu temps réel ne doit pas ramener les lignes au début
+
   productsGrid.innerHTML = groupByCategory(state.categories, state.products)
     .map((g) => {
       // au sein d'une catégorie, les créations disponibles passent d'abord
@@ -301,15 +319,62 @@ function renderProducts() {
         (a, b) => Number(!getAvailability(a).available) - Number(!getAvailability(b).available)
       );
       return `
-        <section id="cat-${esc(g.id)}" data-cat-section="${esc(g.id)}" class="space-y-6">
-          <h2 class="font-serif text-3xl tracking-wide border-b border-[#2C2A29]/15 pb-3">${esc(g.nom)}</h2>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">${items.map(productCard).join("")}</div>
+        <section id="cat-${esc(g.id)}" data-cat-section="${esc(g.id)}" class="row-section" aria-label="${esc(g.nom)}">
+          <div class="row-scroller">${items.map((p) => productCard(p, g.nom)).join("")}</div>
+          <button type="button" data-row-scroll="-1" class="row-arrow row-arrow-prev" aria-label="Précédent">&lsaquo;</button>
+          <button type="button" data-row-scroll="1" class="row-arrow row-arrow-next" aria-label="Suivant">&rsaquo;</button>
         </section>`;
     })
     .join("");
 
+  if (visible) restoreRowPositions();
+  updateRowArrows();
   updateActiveCategory();
 }
+
+function captureRowPositions() {
+  const pos = {};
+  productsGrid.querySelectorAll("section[data-cat-section]").forEach((sec) => {
+    pos[sec.dataset.catSection] = sec.querySelector(".row-scroller").scrollLeft;
+  });
+  state.rowPos = pos;
+}
+
+function restoreRowPositions() {
+  productsGrid.querySelectorAll("section[data-cat-section]").forEach((sec) => {
+    const x = state.rowPos[sec.dataset.catSection];
+    if (!x) return;
+    const sc = sec.querySelector(".row-scroller");
+    sc.style.scrollBehavior = "auto"; // instantané, pas d'animation
+    sc.scrollLeft = x;
+    sc.style.scrollBehavior = "";
+  });
+}
+
+// Flèches de défilement : visibles seulement quand la ligne déborde, et seulement dans le sens utile
+function updateRowArrows() {
+  productsGrid.querySelectorAll("section[data-cat-section]").forEach((sec) => {
+    const sc = sec.querySelector(".row-scroller");
+    const canPrev = sc.scrollLeft > 2;
+    const canNext = sc.scrollLeft + sc.clientWidth < sc.scrollWidth - 2;
+    const toggle = (btn, on) => (on ? btn.setAttribute("data-on", "") : btn.removeAttribute("data-on"));
+    toggle(sec.querySelector("[data-row-scroll='-1']"), canPrev);
+    toggle(sec.querySelector("[data-row-scroll='1']"), canNext);
+  });
+}
+
+productsGrid.addEventListener("scroll", updateRowArrows, true);
+window.addEventListener("resize", updateRowArrows);
+
+productsGrid.addEventListener("click", (e) => {
+  const arrow = e.target.closest("button[data-row-scroll]");
+  if (!arrow) return;
+  const sc = arrow.closest("section").querySelector(".row-scroller");
+  const card = sc.querySelector(".row-card");
+  const step = card.offsetWidth + 32; // largeur d'une carte + espace
+  const perPage = Math.max(1, Math.floor((sc.clientWidth + 32) / step));
+  sc.scrollBy({ left: Number(arrow.dataset.rowScroll) * step * perPage, behavior: "smooth" });
+});
 
 productsGrid.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-add-id]");
@@ -356,7 +421,7 @@ function renderProductPage() {
   // Galerie
   const main = imgs.length
     ? `<img src="${esc(imgs[idx])}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${av.available ? "" : "grayscale opacity-75"}" />`
-    : `<img src="assets/logo.svg" alt="Johanne &amp; Cie" class="w-full h-full object-contain p-10 opacity-80" />`;
+    : `<img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-full object-contain p-10 opacity-80" />`;
   const thumbs = imgs.length > 1
     ? `<div class="flex gap-3 mt-3 overflow-x-auto">${imgs.map((u, i) => `
         <button type="button" data-gallery-idx="${i}" aria-label="Image ${i + 1}" class="w-20 h-20 shrink-0 overflow-hidden border ${i === idx ? "border-[#2C2A29]" : "border-[#2C2A29]/20 hover:border-[#2C2A29]/60"} bg-[#F4F0E8]">
@@ -433,7 +498,10 @@ function renderProductPage() {
       <div class="space-y-6">
         ${group ? `<p class="text-[10px] uppercase tracking-[0.25em] text-[#7F7973]">${esc(group.nom)}</p>` : ""}
         <h1 class="font-serif text-4xl sm:text-5xl leading-tight">${esc(p.nom)}</h1>
-        <p class="font-serif text-3xl">${formatPrice(p.prix)}</p>
+        <div>
+          <p class="font-serif text-3xl">${formatPrice(p.prix)}</p>
+          ${formatPrixPour(p.prixPour) ? `<p class="mt-1 text-xs uppercase tracking-[0.2em] text-[#7F7973]">Pour ${esc(formatPrixPour(p.prixPour))}</p>` : ""}
+        </div>
         ${p.description ? `<p class="text-sm text-[#7F7973] leading-relaxed">${esc(p.description)}${detailBlocks.length ? ` <a href="#product-details" data-scroll class="text-[#2C2A29] underline underline-offset-4">Plus de détails</a>` : ""}</p>` : ""}
         ${season ? `<p class="text-[11px] uppercase tracking-[0.18em] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
         ${action}

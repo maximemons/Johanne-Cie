@@ -2,10 +2,14 @@ import { db, auth, authReady } from "./firebase-config.js";
 import {
   ADMIN_EMAIL, EMAIL_LINK_KEY, ALLERGENES, AUTRE_ID, AUTRE_LABEL, MOIS, ORDER_STATUTS,
   esc, formatPrice, formatDateFR, todayISO, tomorrowISO, catName, isCategoryActive,
-  groupByCategory, normalizeStatut, hasSeason, seasonLabel, isInSeason
+  groupByCategory, normalizeStatut, hasSeason, seasonLabel, isInSeason, formatPrixPour
 } from "./catalog.js";
 import {
-  collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp
+  currentCost, sortHistory, upsertEntry, removeEntry, marginOf, lastChange, pctChange,
+  formatPct, formatNum, formatDateShort, globalIndexSeries, lineChartSVG
+} from "./costs.js";
+import {
+  collection, onSnapshot, addDoc, updateDoc, setDoc, deleteDoc, doc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import {
   GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
@@ -17,6 +21,8 @@ const state = {
   user: null,
   categories: [],
   products: [],
+  couts: {},          // prix de revient privés : { [idPâtisserie]: { historique: [...] } }
+  costProduct: null,  // pâtisserie dont le détail est ouvert
   orders: [],
   tab: "commandes",
   orderView: "commande",
@@ -114,8 +120,18 @@ function startListeners() {
     after();
   };
   unsubscribers.push(
-    onSnapshot(collection(db, "categories"), handle("categories", () => { renderCategories(); renderProductForm(); renderProducts(); })),
-    onSnapshot(collection(db, "patisseries"), handle("products", () => { renderCategories(); renderProducts(); })),
+    onSnapshot(collection(db, "categories"), handle("categories", () => { renderCategories(); renderProductForm(); renderProducts(); renderCosts(); })),
+    onSnapshot(collection(db, "patisseries"), handle("products", () => { renderCategories(); renderProducts(); renderCosts(); })),
+    onSnapshot(
+      collection(db, "couts"),
+      (snap) => {
+        state.couts = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+        $("costs-error").classList.add("hidden");
+        renderCosts();
+        renderProducts();
+      },
+      (err) => { console.error(err); $("costs-error").classList.remove("hidden"); }
+    ),
     onSnapshot(
       collection(db, "commandes"),
       (snap) => {
@@ -133,14 +149,20 @@ function startListeners() {
 }
 
 // ---------------- Onglets ----------------
+const TABS = ["commandes", "patisseries", "categories", "couts"];
 function showTab(tab) {
   state.tab = tab;
-  ["commandes", "patisseries", "categories"].forEach((t) => $(`tab-${t}`).classList.toggle("hidden", t !== tab));
+  TABS.forEach((t) => $(`tab-${t}`).classList.toggle("hidden", t !== tab));
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("is-active", b.dataset.tab === tab));
   history.replaceState(null, "", `#${tab}`);
 }
 document.querySelectorAll(".tab-btn").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
-showTab(["commandes", "patisseries", "categories"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "commandes");
+showTab(TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "commandes");
+// Lien direct / retour navigateur : l'onglet suit le hash
+window.addEventListener("hashchange", () => {
+  const t = location.hash.slice(1);
+  if (TABS.includes(t) && t !== state.tab) showTab(t);
+});
 
 // =============================================================
 // COMMANDES
@@ -321,7 +343,12 @@ productForm.addEventListener("submit", (e) => {
   if (!isAdmin(state.user)) return;
   const id = $("prod-edit-id").value;
   const periode = $("prod-saison-mode").value === "periode";
+  const pourNombre = parseInt($("prod-pour-nombre").value, 10);
+  const pourMax = parseInt($("prod-pour-max").value, 10);
   const data = {
+    prixPour: pourNombre >= 1
+      ? { nombre: pourNombre, nombreMax: pourMax > pourNombre ? pourMax : null, unite: $("prod-pour-unite").value }
+      : null,
     nom: $("prod-nom").value.trim(),
     categorieId: $("prod-categorie").value,
     prix: Number($("prod-prix").value),
@@ -336,9 +363,17 @@ productForm.addEventListener("submit", (e) => {
     poids: $("prod-poids").value.trim(),
     allergenes: checkedAllergenes()
   };
+  const revientRaw = $("prod-revient").value.trim();
+  const revient = revientRaw === "" ? null : Number(revientRaw);
+  if (revient !== null && !(revient >= 0)) return toast("Prix de revient invalide");
   run(async () => {
+    let pid = id;
     if (id) await updateDoc(doc(db, "patisseries", id), data);
-    else await addDoc(collection(db, "patisseries"), { ...data, createdAt: serverTimestamp() });
+    else pid = (await addDoc(collection(db, "patisseries"), { ...data, createdAt: serverTimestamp() })).id;
+    // Un prix de revient modifié s'ajoute à l'historique (daté d'aujourd'hui)
+    if (revient !== null && revient !== currentCost(state.couts[pid]?.historique)) {
+      await saveCost(pid, revient, todayISO());
+    }
     resetProductForm();
   }, id ? "Pâtisserie mise à jour" : "Pâtisserie ajoutée", "Erreur lors de l'enregistrement");
 });
@@ -387,12 +422,18 @@ function renderProducts() {
               <h4 class="font-serif text-xl leading-tight">${esc(p.nom)}</h4>
               <span class="text-[11px] px-2 py-0.5 border ${chip}">${statut}</span>
             </div>
-            <p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">${esc(g.nom)}${orphan ? " (catégorie retirée)" : ""} &bull; ${formatPrice(p.prix)}</p>
+            <p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">${esc(g.nom)}${orphan ? " (catégorie retirée)" : ""} &bull; ${formatPrice(p.prix)}${formatPrixPour(p.prixPour) ? ` &bull; pour ${esc(formatPrixPour(p.prixPour))}` : ""}</p>
+            ${(() => {
+              const c = currentCost(state.couts[p.id]?.historique);
+              const m = marginOf(p.prix, c);
+              return c == null ? "" : `<p class="text-[11px] text-[#7F7973]">Revient ${formatPrice(c)}${m ? ` &bull; marge ${formatPct(m.pct)}` : ""}</p>`;
+            })()}
             ${season ? `<p class="text-[11px] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
             ${autoOff ? `<p class="text-[11px] text-amber-800">Actuellement hors-saison : non commandable</p>` : ""}
           </div>
           <div class="flex flex-wrap gap-2">
             <button type="button" data-action="prod-stock" data-id="${esc(p.id)}" class="px-3 py-1.5 border border-[#2C2A29] text-[11px] uppercase tracking-[0.12em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">${statut === "Disponible" ? "Marquer épuisé" : "Remettre en stock"}</button>
+            <button type="button" data-action="prod-cost" data-id="${esc(p.id)}" class="px-3 py-1.5 border border-[#2C2A29]/40 text-[11px] uppercase tracking-[0.12em] hover:border-[#2C2A29]">Revient</button>
             <button type="button" data-action="prod-edit" data-id="${esc(p.id)}" class="px-3 py-1.5 border border-[#2C2A29]/40 text-[11px] uppercase tracking-[0.12em] hover:border-[#2C2A29]">Modifier</button>
             <button type="button" data-action="prod-delete" data-id="${esc(p.id)}" class="px-3 py-1.5 border border-red-300 text-red-700 text-[11px] uppercase tracking-[0.12em] hover:bg-red-700 hover:text-white transition-colors">Supprimer</button>
           </div>
@@ -407,6 +448,10 @@ function editProduct(p) {
   $("prod-categorie").value = state.categories.some((c) => c.id === p.categorieId && isCategoryActive(c)) ? p.categorieId : "";
   $("prod-prix").value = p.prix ?? "";
   $("prod-statut").value = normalizeStatut(p.statut);
+  $("prod-revient").value = currentCost(state.couts[p.id]?.historique) ?? "";
+  $("prod-pour-nombre").value = p.prixPour?.nombre ?? "";
+  $("prod-pour-max").value = p.prixPour?.nombreMax ?? "";
+  $("prod-pour-unite").value = p.prixPour?.unite === "pieces" ? "pieces" : "personnes";
   $("prod-image").value = p.imageUrl || "";
   $("prod-desc").value = p.description || "";
   $("prod-images").value = (p.images || []).join("\n");
@@ -507,8 +552,22 @@ document.addEventListener("click", (e) => {
     if (p) editProduct(p);
   } else if (action === "prod-delete") {
     const p = state.products.find((x) => x.id === id);
-    if (confirm(`Supprimer « ${p?.nom || "cette pâtisserie"} » ?`)) {
-      run(() => deleteDoc(doc(db, "patisseries", id)), "Pâtisserie supprimée", "Erreur lors de la suppression");
+    const hasCost = Boolean(state.couts[id]);
+    if (confirm(`Supprimer « ${p?.nom || "cette pâtisserie"} » ?${hasCost ? "\n\nSon historique de prix de revient sera aussi supprimé." : ""}`)) {
+      run(async () => {
+        await deleteDoc(doc(db, "patisseries", id));
+        if (hasCost) await deleteDoc(doc(db, "couts", id));
+      }, "Pâtisserie supprimée", "Erreur lors de la suppression");
+    }
+  } else if (action === "prod-cost" || action === "cost-open") {
+    openCost(id);
+  } else if (action === "cost-close") {
+    state.costProduct = null;
+    renderCosts();
+  } else if (action === "cost-del") {
+    if (confirm(`Supprimer le relevé du ${formatDateShort(el.dataset.date)} ?`)) {
+      const next = removeEntry(state.couts[id]?.historique, el.dataset.date);
+      run(() => (next.length ? writeCost(id, next) : deleteDoc(doc(db, "couts", id))), "Relevé supprimé", "Erreur lors de la suppression");
     }
   } else if (action === "cat-toggle") {
     const c = state.categories.find((x) => x.id === id);
@@ -537,3 +596,185 @@ document.addEventListener("change", (e) => {
     run(() => updateDoc(doc(db, "categories", id), { ordre: Number(el.value) || 0 }), "Ordre mis à jour");
   }
 });
+
+
+// =============================================================
+// PRIX DE REVIENT (privé)
+// =============================================================
+const eur = formatPrice;
+const costOf = (id) => currentCost(state.couts[id]?.historique);
+
+const writeCost = (id, historique) => setDoc(doc(db, "couts", id), { historique, updatedAt: serverTimestamp() });
+
+function saveCost(id, valeur, date, note = "") {
+  const entry = { date, valeur, ...(note ? { note } : {}) };
+  return writeCost(id, upsertEntry(state.couts[id]?.historique, entry));
+}
+
+function openCost(id) {
+  state.costProduct = id;
+  showTab("couts");
+  renderCosts();
+  $("costs-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+document.addEventListener("submit", (e) => {
+  if (e.target.id !== "cost-form") return;
+  e.preventDefault();
+  if (!isAdmin(state.user) || !state.costProduct) return;
+  const raw = $("cost-valeur").value.trim();
+  const valeur = Number(raw);
+  const date = $("cost-date").value;
+  if (raw === "" || !(valeur >= 0)) return toast("Prix de revient invalide");
+  if (!date || date > todayISO()) return toast("Date invalide");
+  run(async () => {
+    await saveCost(state.costProduct, valeur, date, $("cost-note").value.trim());
+    $("cost-valeur").value = "";
+    $("cost-note").value = "";
+  }, "Prix de revient enregistré", "Erreur lors de l'enregistrement");
+});
+
+const tile = (label, value, sub = "") => `
+  <div class="border border-[#2C2A29]/15 bg-white p-4">
+    <p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">${label}</p>
+    <p class="font-serif text-2xl mt-1">${value}</p>
+    ${sub ? `<p class="text-[11px] text-[#7F7973] mt-0.5">${sub}</p>` : ""}
+  </div>`;
+
+const evolution = (chg) =>
+  !chg || chg.pct == null ? `<span class="text-[#7F7973]">—</span>`
+  : chg.pct === 0 ? `<span class="text-[#7F7973]">= stable</span>`
+  : `<span class="${chg.pct > 0 ? "text-red-700" : "text-emerald-700"}">${chg.pct > 0 ? "▲" : "▼"} ${formatPct(chg.pct, true)}</span> <span class="text-[11px] text-[#7F7973]">le ${formatDateShort(chg.date)}</span>`;
+
+function renderCosts() {
+  const groups = groupByCategory(state.categories, state.products, { includeEmpty: true });
+  const rows = groups.flatMap((g) => g.products.map((p) => {
+    const hist = state.couts[p.id]?.historique;
+    const cout = currentCost(hist);
+    return { p, g, cout, m: marginOf(p.prix, cout), chg: lastChange(hist) };
+  }));
+
+  // Synthèse
+  const known = rows.filter((r) => r.m);
+  const avg = known.length ? known.reduce((s, r) => s + r.m.pct, 0) / known.length : null;
+  const lowest = known.reduce((min, r) => (!min || r.m.pct < min.m.pct ? r : min), null);
+  $("costs-summary").innerHTML =
+    tile("Prix de revient renseignés", `${rows.filter((r) => r.cout != null).length} / ${rows.length}`) +
+    tile("Marge moyenne", avg == null ? "—" : formatPct(avg)) +
+    tile("Marge la plus faible", lowest ? formatPct(lowest.m.pct) : "—", lowest ? esc(lowest.p.nom) : "");
+
+  // Évolution globale (indice chaîné, base 100 au premier relevé)
+  const ids = new Set(state.products.map((p) => p.id));
+  const index = globalIndexSeries(Object.entries(state.couts).filter(([id]) => ids.has(id)).map(([, c]) => c.historique));
+  $("costs-global").innerHTML = index.length >= 2
+    ? `${lineChartSVG({ points: index, fmt: (v) => formatNum(v, 1), label: "Indice global du prix de revient" })}
+       <p class="text-xs text-[#7F7973] mt-3">Indice 100 = premier relevé (${formatDateShort(index[0].date)}). Il suit la variation moyenne des prix de revient de toute la carte : <strong class="text-[#2C2A29]">${formatNum(index.at(-1).v, 1)}</strong> aujourd'hui (${formatPct(index.at(-1).v - 100, true)}).</p>`
+    : `<p class="text-xs text-[#7F7973]">Le graphique apparaîtra dès qu'au moins un prix de revient aura changé au fil du temps.</p>`;
+
+  // Tableau
+  $("costs-table").innerHTML = rows.length ? `
+    <div class="overflow-x-auto border border-[#2C2A29]/15 bg-white">
+      <table class="w-full text-sm">
+        <thead class="text-[10px] uppercase tracking-[0.15em] text-[#7F7973] text-left border-b border-[#2C2A29]/15">
+          <tr><th class="p-3 font-normal">Pâtisserie</th><th class="p-3 font-normal">Vente</th><th class="p-3 font-normal">Revient</th><th class="p-3 font-normal">Marge</th><th class="p-3 font-normal">Dernière évolution</th><th class="p-3"></th></tr>
+        </thead>
+        <tbody class="divide-y divide-[#2C2A29]/10">
+          ${rows.map(({ p, g, cout, m, chg }) => `
+            <tr class="${state.costProduct === p.id ? "bg-[#F4F0E8]" : ""}">
+              <td class="p-3"><span class="font-serif text-base">${esc(p.nom)}</span><br><span class="text-[10px] uppercase tracking-[0.15em] text-[#7F7973]">${esc(g.nom)}</span></td>
+              <td class="p-3 whitespace-nowrap">${eur(p.prix)}</td>
+              <td class="p-3 whitespace-nowrap">${cout == null ? `<span class="text-[#7F7973]">—</span>` : eur(cout)}</td>
+              <td class="p-3 whitespace-nowrap">${m ? `<span class="${m.eur < 0 ? "text-red-700" : ""}">${eur(m.eur)} <span class="text-[11px] text-[#7F7973]">(${formatPct(m.pct)})</span></span>` : `<span class="text-[#7F7973]">—</span>`}</td>
+              <td class="p-3 whitespace-nowrap">${evolution(chg)}</td>
+              <td class="p-3 text-right"><button type="button" data-action="cost-open" data-id="${esc(p.id)}" class="px-3 py-1.5 border border-[#2C2A29] text-[11px] uppercase tracking-[0.12em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors whitespace-nowrap">${cout == null ? "Saisir" : "Historique"}</button></td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>` : `<p class="text-xs text-[#7F7973]">Aucune pâtisserie.</p>`;
+
+  renderCostPanel();
+}
+
+function renderCostPanel() {
+  const box = $("costs-panel");
+  const p = state.products.find((x) => x.id === state.costProduct);
+  if (!p) {
+    state.costProduct = null;
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+
+  // Conserve la saisie en cours si le panneau est redessiné (mise à jour temps réel)
+  const keep = box.dataset.pid === p.id
+    ? ["cost-valeur", "cost-date", "cost-note"].map((id) => $(id)?.value ?? "") : null;
+
+  const hist = sortHistory(state.couts[p.id]?.historique);
+  const cur = currentCost(hist);
+  const m = marginOf(p.prix, cur);
+  const vals = hist.map((e) => e.valeur);
+  const sinceFirst = hist.length > 1 ? pctChange(hist[0].valeur, cur) : null;
+
+  const chart = hist.length
+    ? lineChartSVG({
+        points: hist.map((e) => ({ date: e.date, v: e.valeur, note: e.note })),
+        ref: Number(p.prix) > 0 ? { v: Number(p.prix), label: `Prix de vente ${eur(p.prix)}` } : null,
+        fmt: eur,
+        label: `Évolution du prix de revient — ${p.nom}`
+      })
+    : `<p class="text-xs text-[#7F7973]">Aucun relevé : saisissez un premier prix de revient ci-dessus.</p>`;
+
+  const desc = [...hist].reverse();
+  box.dataset.pid = p.id;
+  box.classList.remove("hidden");
+  box.innerHTML = `
+    <div class="border border-[#2C2A29] bg-white p-5 sm:p-6 space-y-6">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p class="text-[10px] uppercase tracking-[0.2em] text-[#7F7973]">Historique du prix de revient</p>
+          <h3 class="font-serif text-2xl">${esc(p.nom)}</h3>
+        </div>
+        <button type="button" data-action="cost-close" class="text-[11px] uppercase tracking-[0.15em] underline text-[#7F7973] hover:text-[#2C2A29]">Fermer</button>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        ${tile("Actuel", cur == null ? "—" : eur(cur), `Vente ${eur(p.prix)}`)}
+        ${tile("Marge", m ? eur(m.eur) : "—", m ? formatPct(m.pct) : "")}
+        ${tile("Coefficient", m?.coef ? `× ${formatNum(m.coef, 2)}` : "—", "vente ÷ revient")}
+        ${tile("Depuis le 1er relevé", sinceFirst == null ? "—" : `<span class="${sinceFirst > 0 ? "text-red-700" : sinceFirst < 0 ? "text-emerald-700" : ""}">${formatPct(sinceFirst, true)}</span>`, hist.length ? `depuis le ${formatDateShort(hist[0].date)}` : "")}
+        ${tile("Min – Max", vals.length ? `${eur(Math.min(...vals))} – ${eur(Math.max(...vals))}` : "—")}
+      </div>
+
+      <form id="cost-form" class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-end border border-[#2C2A29]/15 bg-[#FDFBF7] p-4">
+        <div class="sm:col-span-3"><label class="lbl" for="cost-valeur">Nouveau prix de revient (&euro;)</label><input type="number" step="0.01" min="0" id="cost-valeur" required placeholder="Ex : 14.50" class="inp" /></div>
+        <div class="sm:col-span-3"><label class="lbl" for="cost-date">À la date du</label><input type="date" id="cost-date" required max="${todayISO()}" class="inp" /></div>
+        <div class="sm:col-span-4"><label class="lbl" for="cost-note">Note (optionnel)</label><input type="text" id="cost-note" placeholder="Ex : hausse du beurre" class="inp" /></div>
+        <div class="sm:col-span-2"><button type="submit" class="w-full px-4 py-2.5 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.18em] hover:bg-[#43403E] transition-colors">Enregistrer</button></div>
+      </form>
+
+      <div>${chart}</div>
+
+      ${hist.length ? `
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="text-[10px] uppercase tracking-[0.15em] text-[#7F7973] text-left border-b border-[#2C2A29]/15"><tr><th class="py-2 font-normal">Date</th><th class="py-2 font-normal">Prix de revient</th><th class="py-2 font-normal">Variation</th><th class="py-2 font-normal">Note</th><th></th></tr></thead>
+          <tbody class="divide-y divide-[#2C2A29]/10">
+            ${desc.map((e, i) => {
+              const prev = desc[i + 1];
+              const pc = prev ? pctChange(prev.valeur, e.valeur) : null;
+              return `<tr>
+                <td class="py-2 pr-4 whitespace-nowrap">${formatDateShort(e.date)}</td>
+                <td class="py-2 pr-4 whitespace-nowrap">${eur(e.valeur)}</td>
+                <td class="py-2 pr-4 whitespace-nowrap">${pc == null ? `<span class="text-[#7F7973]">relevé initial</span>` : `<span class="${pc > 0 ? "text-red-700" : pc < 0 ? "text-emerald-700" : "text-[#7F7973]"}">${pc > 0 ? "▲" : pc < 0 ? "▼" : "="} ${formatPct(pc, true)}</span>`}</td>
+                <td class="py-2 pr-4 text-[#7F7973]">${esc(e.note || "")}</td>
+                <td class="py-2 text-right"><button type="button" data-action="cost-del" data-id="${esc(p.id)}" data-date="${esc(e.date)}" class="text-[10px] uppercase tracking-[0.15em] text-red-700 underline">Supprimer</button></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>` : ""}
+    </div>`;
+
+  $("cost-date").value = keep?.[1] || todayISO();
+  if (keep) { $("cost-valeur").value = keep[0]; $("cost-note").value = keep[2]; }
+}
