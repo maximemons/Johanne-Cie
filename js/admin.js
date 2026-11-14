@@ -1,6 +1,6 @@
 import { db, auth, authReady } from "./firebase-config.js";
 import {
-  ADMIN_EMAIL, EMAIL_LINK_KEY, ALLERGENES, AUTRE_ID, AUTRE_LABEL, MOIS, ORDER_STATUTS,
+  ADMIN_EMAIL, EMAIL_LINK_KEY, ALLERGENES, BEST_ID, AUTRE_ID, AUTRE_LABEL, MOIS, ORDER_STATUTS,
   esc, formatPrice, formatDateFR, todayISO, tomorrowISO, catName, isCategoryActive,
   groupByCategory, normalizeStatut, hasSeason, seasonLabel, isInSeason, formatPrixPour
 } from "./catalog.js";
@@ -322,7 +322,7 @@ function renderProductForm() {
   const f = $("prod-filter-cat");
   const fcur = state.prodCat;
   f.innerHTML =
-    `<option value="ALL">Toutes les catégories</option>` +
+    `<option value="ALL">Toutes les catégories</option><option value="${BEST_ID}">&#9733; Best-Sellers</option>` +
     groupByCategory(state.categories, [], { includeEmpty: true })
       .map((g) => `<option value="${esc(g.id)}">${esc(g.nom)}</option>`).join("");
   f.value = fcur;
@@ -391,9 +391,12 @@ function renderProducts() {
   const catOf = new Map();
   groups.forEach((g) => g.products.forEach((p) => catOf.set(p.id, g)));
 
-  const items = groups
-    .filter((g) => state.prodCat === "ALL" || g.id === state.prodCat)
-    .flatMap((g) => g.products)
+  const bestCount = state.products.filter((p) => p.bestSeller === true).length;
+  $("best-count").textContent = bestCount ? `\u2605 ${bestCount} best-seller${bestCount > 1 ? "s" : ""}` : "";
+
+  const items = (state.prodCat === BEST_ID
+    ? groups.flatMap((g) => g.products).filter((p) => p.bestSeller === true)
+    : groups.filter((g) => state.prodCat === "ALL" || g.id === state.prodCat).flatMap((g) => g.products))
     .filter((p) => !state.prodSearch || String(p.nom || "").toLowerCase().includes(state.prodSearch));
 
   if (!items.length) {
@@ -420,7 +423,12 @@ function renderProducts() {
           <div class="space-y-1">
             <div class="flex flex-wrap items-start justify-between gap-2">
               <h4 class="font-serif text-xl leading-tight">${esc(p.nom)}</h4>
-              <span class="text-[11px] px-2 py-0.5 border ${chip}">${statut}</span>
+              <span class="flex items-center gap-2 shrink-0">
+                <button type="button" data-action="prod-best" data-id="${esc(p.id)}" aria-pressed="${p.bestSeller === true}"
+                  title="${p.bestSeller === true ? "Retirer des Best-Sellers" : "Ajouter aux Best-Sellers"}"
+                  class="text-2xl leading-none transition-colors ${p.bestSeller === true ? "text-amber-600" : "text-[#2C2A29]/30 hover:text-amber-600"}">${p.bestSeller === true ? "&#9733;" : "&#9734;"}</button>
+                <span class="text-[11px] px-2 py-0.5 border ${chip}">${statut}</span>
+              </span>
             </div>
             <p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">${esc(g.nom)}${orphan ? " (catégorie retirée)" : ""} &bull; ${formatPrice(p.prix)}${formatPrixPour(p.prixPour) ? ` &bull; pour ${esc(formatPrixPour(p.prixPour))}` : ""}</p>
             ${(() => {
@@ -547,6 +555,12 @@ document.addEventListener("click", (e) => {
     if (!p) return;
     const next = normalizeStatut(p.statut) === "Disponible" ? "Épuisé" : "Disponible";
     run(() => updateDoc(doc(db, "patisseries", id), { statut: next }), next === "Épuisé" ? "Marquée épuisée" : "Remise en stock");
+  } else if (action === "prod-best") {
+    const p = state.products.find((x) => x.id === id);
+    if (!p) return;
+    const next = p.bestSeller !== true;
+    run(() => updateDoc(doc(db, "patisseries", id), { bestSeller: next }),
+      next ? "Ajoutée aux Best-Sellers" : "Retirée des Best-Sellers");
   } else if (action === "prod-edit") {
     const p = state.products.find((x) => x.id === id);
     if (p) editProduct(p);

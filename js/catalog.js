@@ -149,3 +149,20 @@ export function formatPrixPour(pp) {
   const [singulier, pluriel] = UNITES[pp.unite === "pieces" ? "pieces" : "personnes"];
   return `${hasRange ? `${n} à ${max}` : n} ${(hasRange ? max : n) > 1 ? pluriel : singulier}`;
 }
+
+// ---------- Best-Sellers : sélection manuelle (étoile en admin), sans lien avec les ventes ----------
+export const BEST_ID = "__best__";
+export const BEST_LABEL = "Best-Sellers";
+
+/**
+ * Groupes affichés en boutique : fausse catégorie « Best-Sellers » en première position
+ * (uniquement s'il y en a au moins un), puis les vraies catégories.
+ * Un best-seller reste aussi dans sa vraie catégorie. Ordre dans la fausse catégorie : celui de la carte.
+ */
+export function shopGroups(categories, products) {
+  const groups = groupByCategory(categories, products);
+  const best = groups.flatMap((g) => g.products).filter((p) => p.bestSeller === true);
+  return best.length
+    ? [{ id: BEST_ID, nom: BEST_LABEL, icon: "★", virtual: true, products: best }, ...groups]
+    : groups;
+}

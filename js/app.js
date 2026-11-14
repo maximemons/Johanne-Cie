@@ -5,7 +5,7 @@ import {
 } from "./cart.js";
 import {
   ADMIN_EMAIL, EMAIL_LINK_KEY, esc, formatPrice, tomorrowISO, parseISODate,
-  getAvailability, groupByCategory, seasonLabel, productImages, productUrl, formatParts, formatPrixPour
+  getAvailability, groupByCategory, seasonLabel, productImages, productUrl, formatParts, formatPrixPour, shopGroups
 } from "./catalog.js";
 import {
   collection, onSnapshot, addDoc, serverTimestamp
@@ -170,7 +170,7 @@ new ResizeObserver(syncStickyOffsets).observe(siteHeader);
 const stickyOffset = () => siteHeader.offsetHeight + categoriesBar.offsetHeight;
 
 function renderCategories() {
-  const groups = groupByCategory(state.categories, state.products);
+  const groups = shopGroups(state.categories, state.products);
 
   if (state.products.length === 0) {
     categoriesBar.innerHTML = "";
@@ -181,7 +181,7 @@ function renderCategories() {
 
   categoriesBar.classList.remove("hidden");
   categoriesBar.innerHTML = `<div class="flex gap-2 sm:gap-3 mx-auto w-max">${groups
-    .map((g) => `<button type="button" data-cat-id="${esc(g.id)}" class="${CAT_BTN_BASE} ${g.id === state.activeCategory ? CAT_BTN_ON : CAT_BTN_OFF}">${esc(g.nom)}</button>`)
+    .map((g) => `<button type="button" data-cat-id="${esc(g.id)}" class="${CAT_BTN_BASE} ${g.id === state.activeCategory ? CAT_BTN_ON : CAT_BTN_OFF}">${g.icon ? `${g.icon} ` : ""}${esc(g.nom)}</button>`)
     .join("")}</div>`;
   syncStickyOffsets();
 }
@@ -270,9 +270,9 @@ function productCard(p, catLabel) {
   const img = p.imageUrl
     ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${off ? "grayscale opacity-75" : ""}" loading="lazy" />`
     : `<img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-full object-contain p-6 bg-[#FDFBF7] opacity-80" />`;
-  const badge = off
-    ? `<span class="absolute top-3 right-3 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>`
-    : "";
+  const badge =
+    (off ? `<span class="absolute top-3 right-3 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>` : "") +
+    (p.bestSeller === true ? `<span class="absolute top-3 left-3 bg-[#FDFBF7] text-[#2C2A29] border border-[#2C2A29] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em]">&#9733; Best-Seller</span>` : "");
   const action = off
     ? `<button type="button" disabled class="w-full py-2.5 px-4 border border-[#2C2A29]/25 text-[#7F7973] bg-[#FDFBF7] text-[11px] uppercase tracking-[0.2em] cursor-not-allowed">${esc(av.reason)}</button>`
     : `<button type="button" data-add-id="${esc(p.id)}" class="w-full py-2.5 px-4 bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E] transition-colors text-[11px] uppercase tracking-[0.2em]">Ajouter au panier</button>`;
@@ -312,7 +312,10 @@ function renderProducts() {
   const visible = state.currentView === "patisseries";
   if (visible) captureRowPositions(); // un re-rendu temps réel ne doit pas ramener les lignes au début
 
-  productsGrid.innerHTML = groupByCategory(state.categories, state.products)
+  // Dans la fausse catégorie « Best-Sellers », chaque carte indique sa vraie catégorie
+  const realName = new Map(groupByCategory(state.categories, state.products).flatMap((g) => g.products.map((p) => [p.id, g.nom])));
+
+  productsGrid.innerHTML = shopGroups(state.categories, state.products)
     .map((g) => {
       // au sein d'une catégorie, les créations disponibles passent d'abord
       const items = [...g.products].sort(
@@ -320,7 +323,7 @@ function renderProducts() {
       );
       return `
         <section id="cat-${esc(g.id)}" data-cat-section="${esc(g.id)}" class="row-section" aria-label="${esc(g.nom)}">
-          <div class="row-scroller">${items.map((p) => productCard(p, g.nom)).join("")}</div>
+          <div class="row-scroller">${items.map((p) => productCard(p, g.virtual ? realName.get(p.id) : g.nom)).join("")}</div>
           <button type="button" data-row-scroll="-1" class="row-arrow row-arrow-prev" aria-label="Précédent">&lsaquo;</button>
           <button type="button" data-row-scroll="1" class="row-arrow row-arrow-next" aria-label="Suivant">&rsaquo;</button>
         </section>`;
@@ -496,7 +499,7 @@ function renderProductPage() {
       </div>
 
       <div class="space-y-6">
-        ${group ? `<p class="text-[10px] uppercase tracking-[0.25em] text-[#7F7973]">${esc(group.nom)}</p>` : ""}
+        ${group || p.bestSeller === true ? `<p class="text-[10px] uppercase tracking-[0.25em] text-[#7F7973]">${group ? esc(group.nom) : ""}${p.bestSeller === true ? `${group ? " &middot; " : ""}<span class="text-[#2C2A29]">&#9733; Best-Seller</span>` : ""}</p>` : ""}
         <h1 class="font-serif text-4xl sm:text-5xl leading-tight">${esc(p.nom)}</h1>
         <div>
           <p class="font-serif text-3xl">${formatPrice(p.prix)}</p>
