@@ -58,7 +58,7 @@ $("admin-email-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const email = $("admin-email").value.trim();
   try {
-    await sendSignInLinkToEmail(auth, email, { url: `${window.location.origin}/admin`, handleCodeInApp: true });
+    await sendSignInLinkToEmail(auth, email, { url: new URL("admin.html", window.location.href).href, handleCodeInApp: true });
     localStorage.setItem(EMAIL_LINK_KEY, email);
     $("admin-info").textContent = `Lien envoyé à ${email}. Ouvrez-le depuis votre messagerie.`;
     $("admin-info").classList.remove("hidden");
@@ -83,7 +83,7 @@ async function completeEmailLinkSignIn() {
     toast("Lien invalide ou expiré");
   } finally {
     linkPending = false;
-    window.history.replaceState(null, "", "/admin");
+    window.history.replaceState(null, "", "admin.html");
     applyUser(auth.currentUser);
   }
 }

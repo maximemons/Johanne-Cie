@@ -2,11 +2,7 @@
   "hosting": {
     "public": ".",
     "ignore": ["firebase.json", "firestore.rules", "README.md", "**/.*", "**/node_modules/**"],
-    "cleanUrls": true,
-    "rewrites": [
-      { "source": "/panier", "destination": "/index.html" },
-      { "source": "/produit", "destination": "/index.html" }
-    ]
+    "cleanUrls": false
   },
   "firestore": { "rules": "firestore.rules" }
 }

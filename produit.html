@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Produit — Johanne &amp; Cie</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Montserrat:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="bg-[#FDFBF7] text-[#2C2A29] antialiased selection:bg-[#2C2A29] selection:text-[#FDFBF7] min-h-screen flex flex-col">
+
+  <!-- En-tête : logo + panier (liens réels vers index.html / panier.html) -->
+  <header class="sticky top-0 z-40 bg-[#FDFBF7]/95 backdrop-blur-sm border-b border-[#2C2A29]/15">
+    <div class="max-w-6xl mx-auto px-4 sm:px-8 py-4 flex items-center justify-between gap-4">
+      <div class="w-10 hidden sm:block" aria-hidden="true"></div>
+
+      <a id="nav-logo-link" href="index.html" aria-label="Accueil Pâtisseries" class="mx-auto block w-full max-w-[300px] sm:max-w-[350px] focus:outline-none transition-opacity hover:opacity-90">
+        <img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-auto" />
+      </a>
+
+      <a id="nav-cart-link" href="panier.html" aria-label="Panier" class="relative p-2.5 border border-[#2C2A29]/20 hover:border-[#2C2A29] transition-colors flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-[#2C2A29]" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007ZM8.625 10.5a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+        </svg>
+        <span id="cart-badge" class="hidden absolute -top-2 -right-2 bg-[#2C2A29] text-[#FDFBF7] text-[10px] font-medium w-5 h-5 rounded-full flex items-center justify-center">0</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-10">
+    <div id="product-detail"></div>
+  </main>
+
+  <!-- Pied de page sobre -->
+  <footer class="border-t border-[#2C2A29]/15 py-6 text-center text-[11px] uppercase tracking-[0.25em] text-[#7F7973]">
+    Maison Johanne &amp; Cie &mdash; Pâtisserie Fines &mdash; Mons &mdash; Ceuninck
+  </footer>
+
+  <!-- Toast de notification -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 bg-[#2C2A29] text-[#FDFBF7] px-5 py-3 text-xs uppercase tracking-[0.18em] shadow-lg translate-y-20 opacity-0 transition-all duration-300 pointer-events-none"></div>
+
+  <script type="module" src="js/produit.js"></script>
+</body>
+</html>

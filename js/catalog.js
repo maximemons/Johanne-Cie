@@ -114,10 +114,11 @@ export function getAvailability(product, date = new Date()) {
 export const EMAIL_LINK_KEY = "johanne_email_for_signin";
 
 // ---------- Fiche produit ----------
-// Les 14 allergènes à déclaration obligatoire (UE)
+// Les 14 allergènes à déclaration obligatoire (UE), plus « Alcool » (mention ajoutée par la Maison)
 export const ALLERGENES = [
-  "Gluten", "Crustacés", "Œufs", "Poissons", "Arachides", "Soja", "Lait", "Alcool",
-  "Fruits à coque", "Céleri", "Moutarde", "Sésame", "Sulfites", "Lupin", "Mollusques"
+  "Gluten", "Crustacés", "Œufs", "Poissons", "Arachides", "Soja", "Lait",
+  "Fruits à coque", "Céleri", "Moutarde", "Sésame", "Sulfites", "Lupin", "Mollusques",
+  "Alcool"
 ];
 
 const isUrl = (u) => /^https?:\/\//i.test(String(u || "").trim());
@@ -128,7 +129,7 @@ export function productImages(p) {
   return [...new Set(all)];
 }
 
-export const productUrl = (id) => `/produit?id=${encodeURIComponent(id)}`;
+export const productUrl = (id) => `produit.html?id=${encodeURIComponent(id)}`;
 
 /** "4" -> "4 parts" ; "1" -> "1 part" ; un texte libre ("6 à 8 parts") est conservé tel quel. */
 export function formatParts(v) {
