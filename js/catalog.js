@@ -21,8 +21,14 @@ export function normalizeOrderStatut(s) {
   return ORDER_STATUTS.includes(s) ? s : "En attente";
 }
 export const isOrderOpen = (o) => !CLOSED_STATUTS.includes(normalizeOrderStatut(o.statut));
-/** Le client peut annuler tant que l'atelier n'a pas lancé la préparation. */
-export const canClientCancel = (o) => ["En attente", "Acceptée"].includes(normalizeOrderStatut(o.statut));
+/** Le client peut annuler tant que l'atelier n'a pas lancé la préparation ni remis un article. */
+export const canClientCancel = (o) =>
+  ["En attente", "Acceptée"].includes(normalizeOrderStatut(o.statut)) && !(o.articles || []).some((a) => a.remis);
+/** Une partie seulement des articles a été remise au client (ex. précommande à venir). */
+export const isPartiallyDelivered = (o) => {
+  const n = (o.articles || []).filter((a) => a.remis).length;
+  return n > 0 && n < (o.articles || []).length;
+};
 /** Commande qui compte (points de fidélité, chiffre) : ni refusée ni annulée. */
 export const isOrderVoid = (o) => ["Refusée", "Annulée"].includes(normalizeOrderStatut(o.statut));
 

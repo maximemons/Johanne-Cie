@@ -36,7 +36,8 @@ const state = {
   pricing: { ...DEFAULT_PRICING },            // réglages du prix suggéré (parametres/prix, privé)
   loyalty: normalizeLoyalty(DEFAULT_LOYALTY), // programme de fidélité (parametres/fidelite, public)
   loyaltyDraft: null,                         // paliers en cours d'édition
-  dirty: { pricing: false, loyalty: false }   // un formulaire en cours d'édition n'est pas écrasé par le temps réel
+  dirty: { pricing: false, loyalty: false },  // un formulaire en cours d'édition n'est pas écrasé par le temps réel
+  priceEdit: null                             // ajustement de prix en cours : { id, total, motif, annulerRemise }
 };
 let unsubscribers = [];
 
@@ -246,6 +247,11 @@ const orderArticles = (o) =>
   (o.articles || []).map((a) => ({ ...a, date: a.dateRetrait || o.dateRetrait || "" }));
 
 const shortId = (o) => o.id.slice(0, 8).toUpperCase();
+// Retrait partiel : chaque article peut être remis séparément (ex. précommande retirée plus tard)
+const REMISE_STATUTS = ["Acceptée", "En préparation", "Prête", "Retirée"];
+const remisCount = (o) => (o.articles || []).filter((a) => a.remis).length;
+const round2 = (n) => Math.round(Number(n) * 100) / 100;
+const fmtIso = (iso) => (iso ? new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : "");
 const statutOf = (o) => normalizeOrderStatut(o.statut);
 const isOpen = isOrderOpen;
 const fmtTs = (ts) => (ts?.toDate ? ts.toDate().toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "");
@@ -274,7 +280,15 @@ function renderOrders() {
   $("pending-badge").classList.toggle("hidden", pending === 0);
   $("order-filter").classList.toggle("hidden", state.orderView === "jour");
 
+  // Le temps réel peut redessiner pendant la saisie d'un ajustement de prix : on garde le curseur
+  const active = document.activeElement?.closest?.("[data-action='price-field']");
+  const field = active?.dataset.field, caret = active?.selectionStart;
   $("orders-list").innerHTML = state.orderView === "jour" ? renderByDay() : renderByOrder();
+  if (field) {
+    const el = $("orders-list").querySelector(`[data-action='price-field'][data-field='${field}']`);
+    el?.focus();
+    try { if (caret != null) el.setSelectionRange(caret, caret); } catch { /* champ numérique */ }
+  }
 }
 
 function renderByOrder() {
@@ -288,10 +302,15 @@ function renderByOrder() {
   return list.map((o) => {
     const placed = o.createdAt?.toDate ? o.createdAt.toDate().toLocaleString("fr-FR") : "À l'instant";
     const statut = statutOf(o);
-    const lines = orderArticles(o).map((a) => `
-      <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-        <span>${a.quantity} &times; ${esc(a.nom)} <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${a.precommande ? ` <span class="text-[10px] uppercase tracking-[0.12em] border border-[#2C2A29]/30 px-1.5 py-0.5 ml-1">Précommande</span>` : ""}</span>
-        <span class="text-[#2C2A29] font-medium">${esc(formatDateFR(a.date))}</span>
+    const canRemit = REMISE_STATUTS.includes(statut) && (o.articles || []).length > 1;
+    const nRemis = remisCount(o), nArt = (o.articles || []).length;
+    const lines = orderArticles(o).map((a, i) => `
+      <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 ${a.remis ? "opacity-60" : ""}">
+        <span>${a.quantity} &times; ${a.remis ? `<s>${esc(a.nom)}</s>` : esc(a.nom)} <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${a.precommande ? ` <span class="text-[10px] uppercase tracking-[0.12em] border border-[#2C2A29]/30 px-1.5 py-0.5 ml-1">Précommande</span>` : ""}${a.remis ? ` <span class="text-[10px] uppercase tracking-[0.12em] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 ml-1">Remis${a.remisLe ? ` le ${esc(fmtIso(a.remisLe))}` : ""}</span>` : ""}</span>
+        <span class="flex items-baseline gap-3">
+          <span class="text-[#2C2A29] font-medium">${esc(formatDateFR(a.date))}</span>
+          ${canRemit ? `<button type="button" data-action="article-remis" data-id="${esc(o.id)}" data-idx="${i}" class="text-[10px] uppercase tracking-[0.15em] underline ${a.remis ? "text-[#7F7973]" : "text-[#2C2A29]"}">${a.remis ? "Annuler la remise" : "Marquer remis"}</button>` : ""}
+        </span>
       </li>`).join("");
     const steps = (NEXT_STEPS[statut] || []).map(([label, to, kind]) =>
       `<button type="button" data-action="order-set" data-id="${esc(o.id)}" data-statut="${esc(to)}" class="px-4 py-2 text-[11px] uppercase tracking-[0.15em] transition-colors ${STEP_CLS[kind]}">${label}</button>`).join("");
@@ -308,10 +327,14 @@ function renderByOrder() {
           <div class="text-right space-y-2">
             <span class="font-serif text-xl">${formatPrice(o.total)}</span>
             <div><span class="inline-block text-[11px] px-2 py-0.5 border ${STATUT_STYLE[statut] || ""}">${esc(statut)}</span></div>
+            ${nRemis && nRemis < nArt ? `<div><span class="inline-block text-[11px] px-2 py-0.5 border bg-emerald-50 text-emerald-800 border-emerald-200">Retrait partiel ${nRemis}/${nArt}</span></div>` : ""}
           </div>
         </div>
         <ul class="text-xs space-y-1.5">${lines}</ul>
         ${o.remise?.montant ? `<p class="text-xs text-[#7F7973]">Sous-total ${formatPrice(o.sousTotal ?? (o.total + o.remise.montant))} &bull; remise fidélité −${formatPrice(o.remise.montant)} (−${o.remise.pct} %, ${o.remise.points} pts)</p>` : ""}
+        ${o.remiseAnnulee ? `<p class="text-xs text-[#7F7973]">Remise fidélité annulée (−${o.remiseAnnulee.pct} %, ${o.remiseAnnulee.points} pts rendus au client).</p>` : ""}
+        ${o.prixAjuste ? `<p class="text-xs text-[#7F7973]">Prix ajusté${fmtTs(o.prixAjuste.le) ? ` le ${esc(fmtTs(o.prixAjuste.le))}` : ""} : ${formatPrice(o.prixAjuste.ancien)} → ${formatPrice(o.total)}${o.prixAjuste.motif ? ` &bull; ${esc(o.prixAjuste.motif)}` : ""}</p>` : ""}
+        ${state.priceEdit?.id === o.id ? priceEditor(o) : ""}
         ${o.notes ? `<div class="bg-[#FDFBF7] p-3 border border-[#2C2A29]/10 text-xs text-[#7F7973]"><strong class="text-[#2C2A29]">Note atelier :</strong> ${esc(o.notes)}</div>` : ""}
         ${cancelledByClient ? `<p class="text-xs bg-red-50 border border-red-200 text-red-800 p-3">Annulée par le client${fmtTs(o.annuleeLe) ? ` le ${esc(fmtTs(o.annuleeLe))}` : ""}.</p>` : ""}
         ${statut === "Refusée" && o.motifRefus ? `<p class="text-xs text-[#7F7973]"><strong class="text-[#2C2A29]">Motif du refus :</strong> ${esc(o.motifRefus)}</p>` : ""}
@@ -323,6 +346,7 @@ function renderByOrder() {
                 ${ORDER_STATUTS.map((s) => `<option ${s === statut ? "selected" : ""}>${s}</option>`).join("")}
               </select>
             </label>
+            ${state.priceEdit?.id === o.id ? "" : `<button type="button" data-action="price-edit" data-id="${esc(o.id)}" class="text-[10px] uppercase tracking-[0.15em] underline">Modifier le prix</button>`}
             <button type="button" data-action="order-delete" data-id="${esc(o.id)}" class="text-[10px] uppercase tracking-[0.15em] text-red-700 underline">Supprimer</button>
           </div>
         </div>
@@ -339,7 +363,81 @@ function setOrderStatus(id, statut) {
     if (motif.trim()) extra.motifRefus = motif.trim();
   }
   if (STEP_FIELD[statut]) extra[STEP_FIELD[statut]] = serverTimestamp();
+  if (statut === "Retirée") {
+    // Retrait global : les articles pas encore remis le sont maintenant
+    const o = state.orders.find((x) => x.id === id);
+    const now = new Date().toISOString();
+    if (o?.articles?.some((a) => !a.remis)) {
+      extra.articles = o.articles.map((a) => (a.remis ? a : { ...a, remis: true, remisLe: now }));
+    }
+    extra.retraitPartiel = false;
+  }
   run(() => updateDoc(doc(db, "commandes", id), { statut, ...extra }), `Commande : ${statut.toLowerCase()}`);
+}
+
+/** Remise (ou annulation de la remise) d'un seul article. Tout remis → commande « Retirée ». */
+function toggleArticleRemis(id, idx) {
+  const o = state.orders.find((x) => x.id === id);
+  if (!o?.articles?.[idx]) return;
+  const articles = o.articles.map((a) => ({ ...a }));
+  const a = articles[idx];
+  if (a.remis) { delete a.remis; delete a.remisLe; }
+  else { a.remis = true; a.remisLe = new Date().toISOString(); }
+  const n = articles.filter((x) => x.remis).length;
+  const upd = { articles, retraitPartiel: n > 0 && n < articles.length };
+  let msg = a.remis ? `« ${a.nom} » remis` : `Remise de « ${a.nom} » annulée`;
+  if (n === articles.length) {
+    upd.statut = "Retirée";
+    upd.retireeLe = serverTimestamp();
+    msg = "Tout est remis : commande retirée";
+  } else if (statutOf(o) === "Retirée") {
+    upd.statut = "Prête"; // un article n'est finalement pas parti
+  }
+  run(() => updateDoc(doc(db, "commandes", id), upd), msg);
+}
+
+/** Formulaire d'ajustement du prix d'une commande. */
+function priceEditor(o) {
+  const d = state.priceEdit;
+  return `
+    <div class="border border-[#2C2A29] bg-[#FDFBF7] p-4 space-y-3 text-xs">
+      <p class="text-[11px] uppercase tracking-[0.15em]">Modifier le prix de la commande</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="space-y-1"><span class="block text-[10px] uppercase tracking-[0.15em] text-[#7F7973]">Nouveau total (€)</span>
+          <input type="number" min="0" step="0.01" value="${esc(d.total)}" data-action="price-field" data-field="total" class="w-full px-3 py-2 text-sm border border-[#2C2A29]/30 bg-white focus:outline-none focus:border-[#2C2A29]" /></label>
+        <label class="space-y-1"><span class="block text-[10px] uppercase tracking-[0.15em] text-[#7F7973]">Motif (affiché au client, facultatif)</span>
+          <input type="text" maxlength="200" value="${esc(d.motif)}" data-action="price-field" data-field="motif" placeholder="Ex : remise non valable" class="w-full px-3 py-2 text-sm border border-[#2C2A29]/30 bg-white focus:outline-none focus:border-[#2C2A29]" /></label>
+      </div>
+      ${o.remise ? `<label class="flex items-center gap-2"><input type="checkbox" data-action="price-remise" ${d.annulerRemise ? "checked" : ""} class="accent-[#2C2A29]" /> Annuler la remise fidélité (−${formatPrice(o.remise.montant)}) et rendre les ${o.remise.points} pts au client</label>` : ""}
+      <p class="text-[#7F7973]">Actuel : ${formatPrice(o.total)}${o.sousTotal != null ? ` (sous-total ${formatPrice(o.sousTotal)})` : ""}. Les points de fidélité gagnés suivent le nouveau total.</p>
+      <div class="flex gap-3">
+        <button type="button" data-action="price-save" data-id="${esc(o.id)}" class="px-4 py-2 bg-[#2C2A29] text-[#FDFBF7] text-[11px] uppercase tracking-[0.15em] hover:bg-[#43403E]">Enregistrer</button>
+        <button type="button" data-action="price-cancel" class="px-4 py-2 border border-[#2C2A29]/40 text-[11px] uppercase tracking-[0.15em]">Annuler</button>
+      </div>
+    </div>`;
+}
+
+function savePriceEdit(id) {
+  const o = state.orders.find((x) => x.id === id);
+  const d = state.priceEdit;
+  if (!o || d?.id !== id) return;
+  const raw = String(d.total).replace(",", ".").trim();
+  const total = round2(raw);
+  if (raw === "" || !(total >= 0)) return toast("Total invalide");
+  const upd = {};
+  if (d.annulerRemise && o.remise) { upd.remise = null; upd.remiseAnnulee = o.remise; }
+  if (total !== round2(o.total)) {
+    upd.total = total;
+    upd.prixAjuste = { ancien: o.prixAjuste?.ancien ?? o.total, motif: d.motif.trim(), le: serverTimestamp() };
+  } else if (o.prixAjuste && d.motif.trim() !== (o.prixAjuste.motif || "")) {
+    upd.prixAjuste = { ...o.prixAjuste, motif: d.motif.trim() };
+  }
+  if (!Object.keys(upd).length) { state.priceEdit = null; renderOrders(); return; }
+  run(async () => {
+    await updateDoc(doc(db, "commandes", id), upd);
+    state.priceEdit = null;
+    renderOrders();
+  }, "Prix de la commande mis à jour", "Erreur lors de la mise à jour du prix");
 }
 
 // Planning de production : tout ce qu'il faut préparer, jour par jour
@@ -347,6 +445,7 @@ function renderByDay() {
   const days = new Map();
   for (const o of state.orders.filter(isOpen)) {
     for (const a of orderArticles(o)) {
+      if (a.remis) continue; // déjà remis au client
       if (!days.has(a.date)) days.set(a.date, []);
       days.get(a.date).push({ ...a, order: o });
     }
@@ -719,6 +818,18 @@ document.addEventListener("click", (e) => {
     }
   } else if (action === "order-set") {
     setOrderStatus(id, el.dataset.statut);
+  } else if (action === "article-remis") {
+    toggleArticleRemis(id, Number(el.dataset.idx));
+  } else if (action === "price-edit") {
+    const o = state.orders.find((x) => x.id === id);
+    if (!o) return;
+    state.priceEdit = { id, total: String(o.total ?? ""), motif: o.prixAjuste?.motif || "", annulerRemise: false };
+    renderOrders();
+  } else if (action === "price-cancel") {
+    state.priceEdit = null;
+    renderOrders();
+  } else if (action === "price-save") {
+    savePriceEdit(id);
   } else if (action === "loy-add") {
     loyaltyDraft().push({ points: "", remisePct: "" });
     state.dirty.loyalty = true;
@@ -742,6 +853,12 @@ document.addEventListener("change", (e) => {
     const o = state.orders.find((x) => x.id === id);
     if (o && el.value !== statutOf(o)) setOrderStatus(id, el.value);
     if (o) el.value = statutOf(o); // le temps réel affichera le nouveau statut
+  } else if (action === "price-remise" && state.priceEdit) {
+    const o = state.orders.find((x) => x.id === state.priceEdit.id);
+    state.priceEdit.annulerRemise = el.checked;
+    // Total proposé : sans la remise si on l'annule, sinon le total actuel
+    if (o) state.priceEdit.total = String(el.checked ? round2(o.sousTotal ?? (o.total + (o.remise?.montant || 0))) : o.total);
+    renderOrders();
   } else if (action === "loy-palier") {
     const d = loyaltyDraft()[Number(el.dataset.idx)];
     if (d) d[el.dataset.field] = el.value;
@@ -750,6 +867,11 @@ document.addEventListener("change", (e) => {
   }
 });
 
+// Saisie de l'ajustement de prix : gardée en mémoire (le temps réel peut redessiner la commande)
+document.addEventListener("input", (e) => {
+  const el = e.target.closest("[data-action='price-field']");
+  if (el && state.priceEdit) state.priceEdit[el.dataset.field] = el.value;
+});
 
 // =============================================================
 // PRIX DE REVIENT (privé)

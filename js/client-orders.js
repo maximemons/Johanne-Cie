@@ -1,11 +1,12 @@
 // Commandes du client connecté : historique, annulation, « Recommander » ; réglages de fidélité.
-import { db } from "./config.js";
+import { db, auth } from "./config.js";
 import { loadCart, addItem } from "./cart.js";
 import { saveCart } from "./shop-common.js";
 import { canClientCancel, isOrderable, isPreorder, seasonWindow, formatDateFR, normalizeStatut } from "./catalog.js";
 import {
   collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 
 const millis = (o) => o.createdAt?.toMillis?.() ?? Date.now();
 
@@ -19,13 +20,30 @@ export function subscribeMyOrders(uid, cb, onError) {
   );
 }
 
-/** Réglages publics du programme de fidélité (parametres/fidelite). */
+/**
+ * Réglages publics du programme de fidélité (parametres/fidelite), en temps réel.
+ * `cb(reglages | null, erreur | null)`.
+ * L'écoute démarre une fois la session connue, puis redémarre à chaque connexion / déconnexion :
+ * une écoute Firestore refusée (permission-denied) s'arrête définitivement, il faut donc la relancer
+ * plutôt que de rester bloqué sur l'échec du premier chargement.
+ */
 export function subscribeLoyaltySettings(cb) {
-  return onSnapshot(
-    doc(db, "parametres", "fidelite"),
-    (snap) => cb(snap.data() || null),
-    (err) => { console.warn("Réglages fidélité indisponibles :", err); cb(null); }
-  );
+  let unsub = null;
+  const start = () => {
+    unsub?.();
+    unsub = onSnapshot(
+      doc(db, "parametres", "fidelite"),
+      (snap) => cb(snap.exists() ? snap.data() : null, null),
+      (err) => {
+        console.error(
+          "Programme de fidélité illisible (parametres/fidelite). " +
+          "Vérifiez que les règles sont déployées : firebase deploy --only firestore:rules", err);
+        cb(null, err);
+      }
+    );
+  };
+  const stopAuth = onAuthStateChanged(auth, start);
+  return () => { stopAuth(); unsub?.(); };
 }
 
 /** Annulation par le client : autorisée tant que la commande n'est pas « En préparation ». */

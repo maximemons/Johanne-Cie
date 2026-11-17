@@ -2,7 +2,7 @@
 import { $, showToast, catalog, subscribeCatalog } from "./shop-common.js";
 import { mountNotifOptIn } from "./web-notify.js";
 import {
-  esc, formatPrice, formatDateFR, normalizeOrderStatut, canClientCancel, productUrl
+  esc, formatPrice, formatDateFR, normalizeOrderStatut, canClientCancel, productUrl, isPartiallyDelivered
 } from "./catalog.js";
 import { mountAuthGate, watchUser, logout } from "./auth-ui.js";
 import {
@@ -10,7 +10,7 @@ import {
 } from "./client-orders.js";
 import { loyaltyBalance, normalizeLoyalty, pointsFor } from "./loyalty.js";
 
-const state = { user: null, orders: null, loyalty: null, busy: new Set() };
+const state = { user: null, orders: null, loyalty: null, loyaltyError: null, busy: new Set() };
 let unsubOrders = null;
 
 const gate = mountAuthGate($("account-gate"), { page: "compte.html", subtitle: "Connectez-vous pour retrouver vos commandes et vos points." });
@@ -40,6 +40,13 @@ function render() {
 // ---------- Fidélité ----------
 function renderLoyalty() {
   const box = $("fidelite");
+  if (state.loyaltyError) {
+    box.classList.remove("hidden");
+    box.innerHTML = `
+      <h2 id="fidelite-title" class="font-serif text-2xl">Ma fidélité</h2>
+      <p class="text-xs text-[#7F7973] border border-[#2C2A29]/15 bg-white p-4">Le programme de fidélité ne peut pas être affiché pour le moment. Vos points ne sont pas perdus : réessayez un peu plus tard.</p>`;
+    return;
+  }
   const cfg = normalizeLoyalty(state.loyalty);
   if (!cfg.actif) { box.classList.add("hidden"); return; }
   const bal = loyaltyBalance(state.orders || [], cfg);
@@ -98,12 +105,13 @@ function renderOrders() {
     const st = CLIENT_STATUT[statut];
     const placed = o.createdAt?.toDate ? o.createdAt.toDate().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "à l'instant";
     const busy = state.busy.has(o.id);
+    const partial = isPartiallyDelivered(o) && statut !== "Retirée";
     const lines = (o.articles || []).map((a) => `
       <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-        <span>${a.quantity} &times; <a href="${productUrl(a.id)}" class="hover:underline underline-offset-4">${esc(a.nom)}</a> <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span></span>
+        <span>${a.quantity} &times; <a href="${productUrl(a.id)}" class="hover:underline underline-offset-4">${esc(a.nom)}</a> <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${partial && a.remis ? ` <span class="text-[10px] uppercase tracking-[0.12em] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 ml-1">Retiré${a.remisLe ? ` le ${esc(new Date(a.remisLe).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }))}` : ""}</span>` : ""}</span>
         <span class="text-[#7F7973]">${esc(formatDateFR(a.dateRetrait || o.dateRetrait))}</span>
       </li>`).join("");
-    const lockedMsg = !canClientCancel(o) && ["En préparation", "Prête"].includes(statut)
+    const lockedMsg = !canClientCancel(o) && (["En préparation", "Prête"].includes(statut) || partial)
       ? `<p class="text-[11px] text-[#7F7973]">La préparation a commencé : pour toute modification, contactez la maison.</p>` : "";
 
     return `
@@ -115,10 +123,13 @@ function renderOrders() {
           </div>
           <div class="text-right space-y-1.5">
             <span class="inline-block text-[11px] px-2 py-0.5 border ${st.cls}">${st.label}</span>
+            ${partial ? `<div><span class="inline-block text-[11px] px-2 py-0.5 border bg-emerald-50 text-emerald-800 border-emerald-200">Retrait partiel</span></div>` : ""}
             <p class="font-serif text-xl">${formatPrice(o.total)}</p>
           </div>
         </div>
         <ul class="text-xs space-y-1.5">${lines}</ul>
+        ${o.prixAjuste ? `<p class="text-xs text-[#7F7973]">Prix ajusté par la maison : ${formatPrice(o.prixAjuste.ancien)} → ${formatPrice(o.total)}${o.prixAjuste.motif ? ` (${esc(o.prixAjuste.motif)})` : ""}.</p>` : ""}
+        ${o.remiseAnnulee ? `<p class="text-xs text-[#7F7973]">La remise fidélité n'a pas été appliquée : vos ${o.remiseAnnulee.points} pts vous ont été rendus.</p>` : ""}
         ${o.remise?.montant ? `<p class="text-xs text-[#7F7973]">Remise fidélité : −${formatPrice(o.remise.montant)} (${o.remise.points} pts utilisés${["Refusée", "Annulée"].includes(statut) ? ", rendus" : ""})</p>` : ""}
         ${loyaltyOn && !["Refusée", "Annulée"].includes(statut) && pointsFor(o.total) ? `<p class="text-xs text-[#7F7973]">${statut === "En attente" ? "Rapportera" : "A rapporté"} ${pointsFor(o.total)} pt${pointsFor(o.total) > 1 ? "s" : ""} de fidélité.</p>` : ""}
         ${statut === "Refusée" && o.motifRefus ? `<p class="text-xs bg-red-50 border border-red-200 text-red-800 p-3">Message de l'atelier : ${esc(o.motifRefus)}</p>` : ""}
@@ -177,7 +188,11 @@ watchUser((user) => {
   render();
 }, { page: "compte.html", onLinkError: gate.showError });
 
-subscribeLoyaltySettings((cfg) => { state.loyalty = cfg; if (state.user) render(); });
+subscribeLoyaltySettings((cfg, err) => {
+  state.loyalty = cfg;
+  state.loyaltyError = err;
+  if (state.user) render();
+});
 subscribeCatalog(() => {}); // la carte est nécessaire pour « Recommander »
 render();
 

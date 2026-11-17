@@ -18,6 +18,9 @@ const state = {
   showDateErrors: false,
   orders: [],            // commandes du client (solde de fidélité)
   loyalty: null,         // réglages du programme (parametres/fidelite)
+  loyaltyError: null,    // réglages ou commandes illisibles : le client en est informé
+  settingsError: null,
+  ordersError: null,
   rewardPoints: 0,       // palier choisi (en points), 0 = aucun
   flash: takeFlash()     // message venant d'une autre page (ex. « Recommander »)
 };
@@ -160,6 +163,7 @@ function renderCart() {
 
 // ---------- Fidélité & totaux ----------
 function loyaltyState() {
+  if (state.loyaltyError) return null;
   const cfg = normalizeLoyalty(state.loyalty);
   if (!cfg.actif) return null;
   const bal = loyaltyBalance(state.orders, cfg);
@@ -181,7 +185,16 @@ function renderTotals() {
   $("cart-discount").textContent = `−${formatPrice(discount)}`;
   $("cart-total").textContent = formatPrice(total);
 
-  if (!L) { loyaltyBox.classList.add("hidden"); loyaltyBox.innerHTML = ""; return; }
+  if (!L) {
+    if (state.loyaltyError) {
+      loyaltyBox.classList.remove("hidden");
+      loyaltyBox.innerHTML = `<p class="text-xs text-[#7F7973]">Le programme de fidélité est momentanément indisponible : vos points ne sont pas perdus, mais aucune remise ne peut être appliquée à cette commande.</p>`;
+    } else {
+      loyaltyBox.classList.add("hidden");
+      loyaltyBox.innerHTML = "";
+    }
+    return;
+  }
   const { cfg, bal, rewards } = L;
   const next = cfg.paliers.find((p) => p.points > bal.solde);
   const expiry = bal.prochaineExpiration
@@ -291,9 +304,17 @@ function applyUser(user) {
   unsubOrders?.();
   unsubOrders = null;
   state.orders = [];
+  state.ordersError = null;
+  refreshLoyaltyError();
   if (user) {
     unsubOrders = subscribeMyOrders(user.uid, (orders) => {
       state.orders = orders;
+      state.ordersError = null;
+      refreshLoyaltyError();
+      if (state.cart.length) renderTotals();
+    }, (err) => {
+      state.ordersError = err;
+      refreshLoyaltyError();
       if (state.cart.length) renderTotals();
     });
   }
@@ -302,8 +323,14 @@ function applyUser(user) {
 
 watchUser(applyUser, { page: "panier.html", onLinkError: gate.showError });
 $("signout-btn").addEventListener("click", logout);
-subscribeLoyaltySettings((cfg) => {
+// Sans les réglages ou sans les commandes, le solde serait faux : pas de remise, mais un message.
+function refreshLoyaltyError() {
+  state.loyaltyError = state.settingsError || state.ordersError || null;
+}
+subscribeLoyaltySettings((cfg, err) => {
   state.loyalty = cfg;
+  state.settingsError = err;
+  refreshLoyaltyError();
   if (state.authReady && state.user && state.cart.length) renderTotals();
 });
 
