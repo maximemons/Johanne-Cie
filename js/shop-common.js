@@ -1,7 +1,9 @@
-// Éléments communs aux pages boutique (index.html, produit.html, panier.html)
-import { db } from "./config.js";
+// Éléments communs aux pages boutique (index.html, produit.html, panier.html, compte.html)
+import { db, auth } from "./config.js";
 import { loadCart, persistCart, getCartCount } from "./cart.js";
-import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { createOrderWatcher, showAlert, orderNumber } from "./web-notify.js";
+import { collection, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 
 export const $ = (id) => document.getElementById(id);
 
@@ -60,3 +62,35 @@ document.addEventListener("click", (e) => {
 syncCartBadge();
 window.addEventListener("pageshow", () => syncCartBadge());
 window.addEventListener("storage", () => syncCartBadge());
+
+// ---------- Alertes navigateur côté client ----------
+// Tant qu'une page de la boutique est ouverte (même en arrière-plan), le client connecté
+// qui a autorisé les alertes est prévenu quand l'atelier fait avancer sa commande.
+// Les changements survenus pendant son absence sont signalés à sa prochaine visite.
+const CLIENT_ALERTS = {
+  "Acceptée": (o) => [`Commande #${orderNumber(o)} acceptée`, "Bonne nouvelle : l'atelier a accepté votre commande."],
+  "En préparation": (o) => [`Commande #${orderNumber(o)} aux fourneaux`, "Votre commande est en cours de préparation à l'atelier."]
+  // Pour prévenir aussi d'autres étapes, ajouter ici "Prête", "Refusée"...
+};
+
+let stopClientAlerts = null;
+onAuthStateChanged(auth, (user) => {
+  stopClientAlerts?.();
+  stopClientAlerts = null;
+  if (!user) return;
+  const watch = createOrderWatcher(`johanne_alertes_client_${user.uid}`);
+  stopClientAlerts = onSnapshot(
+    query(collection(db, "commandes"), where("userId", "==", user.uid)),
+    (snap) => {
+      if (snap.metadata.hasPendingWrites) return;
+      const changes = watch(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      for (const { order, now } of changes) {
+        const make = CLIENT_ALERTS[now];
+        if (!make) continue;
+        const [title, body] = make(order);
+        showAlert(title, { body, url: "compte.html", tag: `client-${order.id}-${now}` });
+      }
+    },
+    (err) => console.warn("Suivi des commandes indisponible :", err)
+  );
+});

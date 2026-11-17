@@ -10,7 +10,7 @@ Maison Johanne & Cie — site de commande connecté à Firebase (`johanne-and-ci
 | `compte.html` | mon compte : fidélité, historique des commandes | `js/compte.js` |
 | `admin.html` | administration | `js/admin.js` |
 
-`js/config.js` contient toute la configuration (Firebase + EmailJS). `js/shop-common.js` regroupe ce que partagent les pages boutique (catalogue en temps réel, pastille du panier, notifications). Le panier est conservé dans le navigateur (`localStorage`) et donc partagé entre les pages.
+`js/config.js` contient toute la configuration (Firebase). `js/shop-common.js` regroupe ce que partagent les pages boutique (catalogue en temps réel, pastille du panier, notifications). Le panier est conservé dans le navigateur (`localStorage`) et donc partagé entre les pages.
 
 ## Boutique
 - **Best-Sellers** : sélection manuelle (étoile ★ sur la liste des pâtisseries en admin), sans lien avec les ventes. Ils apparaissent dans une fausse catégorie « Best-Sellers », en première position de la liste et de la barre de catégories (elle disparaît s'il n'y en a aucun). Un best-seller reste aussi dans sa vraie catégorie, avec une pastille ★.
@@ -23,32 +23,24 @@ Maison Johanne & Cie — site de commande connecté à Firebase (`johanne-and-ci
 - **Favoris** : un cœur sur chaque carte et sur la fiche produit. Dès qu'il y a un favori, une catégorie « ♥ Favoris » apparaît en première position (avant « Best-Sellers »). Les favoris sont gardés dans le navigateur et, une fois connecté, synchronisés avec le compte (`clients/{uid}`), donc retrouvés sur tous les appareils.
 - **Mon compte** (`compte.html`, icône en haut à droite) : points de fidélité et historique des commandes avec leur statut.
   - **Recommander** remet les articles dans le panier aux prix actuels puis ouvre le panier, avec un message qui détaille ce qui n'a pas pu être ajouté (épuisé, retiré, plus à la carte) et les créations hors saison ajoutées en précommande.
-  - **Annuler la commande** est possible tant que l'atelier ne l'a pas passée « En préparation ». L'atelier reçoit un e-mail.
+  - **Annuler la commande** est possible tant que l'atelier ne l'a pas passée « En préparation ». L'atelier reçoit une alerte.
 - **Fidélité** : 1 € = 1 point (arrondi à l'inférieur : 4,50 € = 4 pts). Les points sont gagnés quand l'atelier accepte la commande ; une commande refusée ou annulée ne rapporte rien et rend les points utilisés. Dans le panier, le client choisit s'il utilise une récompense (une par commande) ; la remise apparaît sur la commande côté admin. Si une validité est réglée, chaque point expire N jours après la commande qui l'a rapporté (les points dépensés sont pris parmi les plus anciens).
 
 ## Administration (`admin.html`, `pro.maxime.mons@gmail.com`, via Google ou lien e-mail)
 - **Commandes** : vue par commande ou **par jour** (planning de production : total à préparer par création). Cycle : *En attente* → **Accepter** / **Refuser** (motif facultatif, affiché au client) → **En préparation** → *Prête* → *Retirée*. Un sélecteur permet aussi de forcer un statut. Les anciennes commandes « Confirmée » sont lues comme « Acceptée ». Une annulation par le client est signalée sur la commande.
-- **Paramètres** : taux du prix suggéré (majoration du revient ou marge sur le prix de vente, arrondi au 0,50 € ou à l'euro le plus proche), programme de fidélité (activation, texte de présentation affiché aux clients, récompenses « X pts = Y % », validité des points en jours glissants), état des notifications e-mail.
+- **Paramètres** : taux du prix suggéré (majoration du revient ou marge sur le prix de vente, arrondi au 0,50 € ou à l'euro le plus proche), programme de fidélité (activation, texte de présentation affiché aux clients, récompenses « X pts = Y % », validité des points en jours glissants), activation et test des alertes de commande.
 - **Pâtisseries & Stocks** : étoile ★ Best-Seller (clic pour activer / retirer, filtre et compteur), créer / modifier / supprimer (avec la fiche détaillée : images supplémentaires, composition, allergènes, parts, poids, avertissement de conservation), bouton rapide « Marquer épuisé / Remettre en stock », **saisonnalité** (période de mois, y compris à cheval sur deux années).
 - **Prix de revient** (privé) : saisie depuis le formulaire d'une pâtisserie ou depuis l'onglet dédié. Chaque modification est datée et conservée (une valeur par jour, note optionnelle, suppression possible). L'onglet affiche marge en € et en %, coefficient, variation depuis le premier relevé, un graphique par pâtisserie (courbe en escalier + prix de vente en pointillés) et un indice global d'évolution des coûts (base 100). **Prix de vente suggéré** : dès qu'un prix de revient est saisi dans le formulaire d'une pâtisserie (création ou modification), une popup propose un prix de vente ; « Valider » le place dans le champ Prix, qu'il reste à enregistrer. Depuis le panneau d'historique, « Valider » met directement à jour la pâtisserie. Règle par défaut : revient + 40 %, arrondi au 0,50 € le plus proche (ex. revient 14,50 € → 20,30 € → **20,50 €**), réglable dans **Paramètres** (stocké dans `parametres/prix`, privé). Aucune popup si le prix est déjà le prix suggéré ou si le relevé est daté avant le dernier. Ces données sont stockées dans la collection `couts`, **réservée à l'admin par `firestore.rules`** : jamais dans `patisseries`, jamais lues par la boutique.
 - **Catégories** : créer, réordonner, masquer (« rendre indisponible ») ou supprimer.
 
-## Notifications e-mail (EmailJS)
-Un e-mail est envoyé à l'atelier à chaque commande passée et à chaque annulation par un client. Configuration dans `js/config.js` (objet `EMAILJS`) ; tant que la clé publique est vide, rien n'est envoyé et les commandes fonctionnent normalement.
+## Alertes navigateur (gratuites, sans serveur)
+Notifications système du navigateur (API Notification + service worker `sw.js`), déclenchées par les écoutes Firestore en temps réel déjà utilisées par le site : aucun e-mail, aucune Cloud Function, aucun forfait payant.
 
-Modèle EmailJS conseillé (un seul modèle peut servir aux deux événements) — destinataire `{{to_email}}`, objet `{{evenement}} #{{commande_id}}`, corps :
-```
-{{evenement}} — commande #{{commande_id}}
-Client : {{client_email}}
-Total : {{total}}
-{{remise}}
+- **Atelier** (`admin.html`) : une alerte à chaque **nouvelle commande** et à chaque **annulation par un client**. Un clic ouvre (ou remet au premier plan) `admin.html#commandes`. Activation : bandeau en haut des commandes, ou *Paramètres → Alertes de commande* (avec bouton de test).
+- **Clients** (s'ils acceptent) : une alerte quand l'atelier **accepte** la commande et quand elle passe **En préparation**. Un clic ouvre `compte.html`. Activation proposée après la commande et sur « Mon compte ». Étapes signalées réglables dans `CLIENT_ALERTS` (`js/shop-common.js`).
+- Chaque navigateur mémorise l'état des commandes déjà vues (`localStorage`) : les changements survenus pendant que le site était fermé sont signalés à la prochaine ouverture, une seule fois même avec plusieurs onglets, et rien n'est signalé sur l'historique lors de la première activation.
 
-{{details}}
-
-Note : {{notes}}
-Gérer : {{admin_url}}
-```
-Pensez à ajouter le domaine du site dans *EmailJS → Account → Security*. L'adresse e-mail du client transite par EmailJS : à mentionner dans votre politique de confidentialité (RGPD).
+Limite (inhérente à l'absence de serveur) : une alerte n'arrive en direct que si **un onglet du site est ouvert** sur l'appareil, même réduit ou en arrière-plan. Conseil pour l'atelier : épingler l'onglet `admin.html`. Sur iPhone / iPad, les alertes exigent d'ajouter le site à l'écran d'accueil (iOS 16.4+), et iOS suspend vite les pages en arrière-plan. HTTPS obligatoire (c'est le cas sur Firebase Hosting ; `localhost` fonctionne pour les tests).
 
 ## Déploiement
 ```

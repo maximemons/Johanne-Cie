@@ -2,7 +2,6 @@
 import { db } from "./config.js";
 import { loadCart, addItem } from "./cart.js";
 import { saveCart } from "./shop-common.js";
-import { notifyAtelier } from "./notify.js";
 import { canClientCancel, isOrderable, isPreorder, seasonWindow, formatDateFR, normalizeStatut } from "./catalog.js";
 import {
   collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp
@@ -33,7 +32,6 @@ export function subscribeLoyaltySettings(cb) {
 export async function cancelOrder(order) {
   if (!canClientCancel(order)) throw new Error("Cette commande ne peut plus être annulée.");
   await updateDoc(doc(db, "commandes", order.id), { statut: "Annulée", annuleeLe: serverTimestamp(), annuleePar: "client" });
-  await notifyAtelier("annulee", order);
 }
 
 /**

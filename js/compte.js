@@ -1,5 +1,6 @@
 // Mon compte : programme de fidélité et historique des commandes (recommander, annuler).
 import { $, showToast, catalog, subscribeCatalog } from "./shop-common.js";
+import { mountNotifOptIn } from "./web-notify.js";
 import {
   esc, formatPrice, formatDateFR, normalizeOrderStatut, canClientCancel, productUrl
 } from "./catalog.js";
@@ -185,3 +186,8 @@ if (location.hash === "#fidelite") {
   const go = () => $("fidelite").scrollIntoView({ behavior: "smooth" });
   setTimeout(go, 600);
 }
+
+// Alertes navigateur : proposition d'activation (avancement des commandes)
+mountNotifOptIn($("notif-client"), {
+  texte: "Être prévenu sur cet appareil dès que l'atelier accepte votre commande, puis quand elle passe aux fourneaux ?"
+});

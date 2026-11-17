@@ -1,4 +1,4 @@
-import { db, auth, authReady, EMAILJS } from "./config.js";
+import { db, auth, authReady } from "./config.js";
 import {
   ADMIN_EMAIL, EMAIL_LINK_KEY, ALLERGENES, BEST_ID, AUTRE_ID, AUTRE_LABEL, MOIS, ORDER_STATUTS,
   esc, formatPrice, formatDateFR, todayISO, tomorrowISO, catName, isCategoryActive,
@@ -11,7 +11,7 @@ import {
   suggestSellingPrice, targetPrice, markupPct, pricingRuleLabel, normalizePricing, DEFAULT_PRICING
 } from "./costs.js";
 import { normalizeLoyalty, DEFAULT_LOYALTY } from "./loyalty.js";
-import { emailEnabled } from "./notify.js";
+import { createOrderWatcher, showAlert, mountNotifOptIn, notifPermission, orderNumber } from "./web-notify.js";
 import {
   collection, onSnapshot, addDoc, updateDoc, setDoc, deleteDoc, doc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
@@ -147,6 +147,7 @@ function startListeners() {
           .map((d) => ({ id: d.id, ...d.data() }))
           .sort((a, b) => (b.createdAt?.toMillis?.() ?? Date.now()) - (a.createdAt?.toMillis?.() ?? Date.now()));
         renderOrders();
+        if (!snap.metadata.hasPendingWrites) alertAdmin(watchAdminOrders(state.orders));
       },
       (err) => {
         console.error(err);
@@ -163,6 +164,39 @@ function startListeners() {
     }, (err) => console.warn("Paramètres de fidélité :", err))
   );
 }
+
+// ---------------- Alertes navigateur (nouvelle commande, annulation par un client) ----------------
+const watchAdminOrders = createOrderWatcher("johanne_alertes_admin");
+const ADMIN_URL = "admin.html#commandes";
+
+function alertAdmin(changes) {
+  const events = changes.filter(({ order, before, now }) =>
+    (before === undefined && now === "En attente") ||
+    (now === "Annulée" && order.annuleePar === "client"));
+  if (events.length > 3) {
+    const nouvelles = events.filter((e) => e.now === "En attente").length;
+    const annulees = events.length - nouvelles;
+    const parts = [nouvelles && `${nouvelles} nouvelle${nouvelles > 1 ? "s" : ""} commande${nouvelles > 1 ? "s" : ""}`, annulees && `${annulees} annulation${annulees > 1 ? "s" : ""}`].filter(Boolean);
+    showAlert("Johanne & Cie — commandes", { body: parts.join(" et "), url: ADMIN_URL, tag: "admin-resume" });
+    return;
+  }
+  for (const { order, now } of events) {
+    const annulee = now === "Annulée";
+    const articles = (order.articles || []).map((a) => `${a.quantity} × ${a.nom}`).join(", ");
+    showAlert(annulee ? `Commande annulée #${orderNumber(order)}` : `Nouvelle commande #${orderNumber(order)}`, {
+      body: `${order.userEmail || "Client"} — ${formatPrice(order.total || 0)}${articles ? `\n${articles}` : ""}`,
+      url: ADMIN_URL,
+      tag: `admin-${order.id}-${now}`
+    });
+  }
+}
+
+mountNotifOptIn($("notif-admin"), {
+  texte: "Recevez une alerte à chaque nouvelle commande et à chaque annulation par un client, tant qu'un onglet de l'administration est ouvert (même réduit). Un clic sur l'alerte ouvre les commandes.",
+  onTest: () => showAlert("Alerte de test", { body: "Les alertes de commande fonctionnent sur cet appareil.", url: ADMIN_URL, tag: "admin-test" })
+});
+mountNotifOptIn($("notif-admin-banner"), { texte: "Être alerté à chaque nouvelle commande ou annulation ?" });
+if (notifPermission() !== "default") $("notif-admin-banner")?.classList.add("hidden");
 
 // ---------------- Onglets ----------------
 const TABS = ["commandes", "patisseries", "categories", "couts", "parametres"];
@@ -1009,9 +1043,6 @@ function renderSettings() {
     state.loyaltyDraft = null;
     renderLoyaltyPaliers();
   }
-  $("email-status").innerHTML = emailEnabled()
-    ? `Activées : un e-mail est envoyé à <strong>${esc(EMAILJS.destinataire)}</strong> à chaque commande passée et à chaque annulation par un client (EmailJS).`
-    : `<span class="text-amber-800">Non configurées.</span> Renseignez la partie <code>EMAILJS</code> du fichier <code>js/config.js</code> (clé publique, service et modèle) pour recevoir un e-mail à chaque commande passée ou annulée.`;
 }
 
 $("pricing-form").addEventListener("input", () => { state.dirty.pricing = true; renderPricingExample(); });

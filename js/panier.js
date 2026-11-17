@@ -8,7 +8,7 @@ import {
 import { mountAuthGate, watchUser, logout } from "./auth-ui.js";
 import { subscribeMyOrders, subscribeLoyaltySettings, takeFlash } from "./client-orders.js";
 import { loyaltyBalance, normalizeLoyalty, availableRewards, rewardAmount, pointsFor } from "./loyalty.js";
-import { notifyAtelier } from "./notify.js";
+import { mountNotifOptIn, notifPermission } from "./web-notify.js";
 import { collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
 const state = {
@@ -348,7 +348,6 @@ $("submit-order-btn").addEventListener("click", async () => {
 
   try {
     const ref = await addDoc(collection(db, "commandes"), order);
-    notifyAtelier("passee", { ...order, id: ref.id }); // e-mail à l'atelier (sans bloquer)
 
     state.cart = [];
     state.rewardPoints = 0;
@@ -364,6 +363,10 @@ $("submit-order-btn").addEventListener("click", async () => {
     $("cart-discount-row").classList.add("hidden");
     $("order-id-display").textContent = ref.id.slice(0, 8).toUpperCase();
     orderConfirmation.classList.remove("hidden");
+    // Proposer les alertes d'avancement (seulement si le client n'a encore rien choisi)
+    if (notifPermission() === "default") {
+      mountNotifOptIn($("notif-client-confirm"), { texte: "Être prévenu ici quand l'atelier accepte votre commande et quand elle passe aux fourneaux ?" });
+    }
   } catch (err) {
     console.error(err);
     showToast("Erreur lors de la commande");

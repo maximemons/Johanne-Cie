@@ -61,6 +61,7 @@
 
       <!-- COMMANDES -->
       <div id="tab-commandes" class="space-y-6">
+        <div id="notif-admin-banner" class="hidden flex flex-wrap items-center justify-between gap-3 border border-[#2C2A29]/25 bg-white px-4 py-3"></div>
         <div class="flex flex-wrap items-end justify-between gap-4">
           <h2 class="font-serif text-2xl">Commandes clients</h2>
           <div class="flex flex-wrap items-center gap-3">
@@ -276,8 +277,9 @@
         </form>
 
         <div class="bg-white border border-[#2C2A29]/15 p-6 sm:p-8 space-y-2 max-w-3xl">
-          <h3 class="font-serif text-xl">Notifications par e-mail</h3>
-          <p id="email-status" class="text-xs leading-relaxed"></p>
+          <h3 class="font-serif text-xl">Alertes de commande</h3>
+          <div id="notif-admin" class="space-y-3 leading-relaxed"></div>
+          <p class="text-xs text-[#7F7973]">À activer sur chaque appareil (ordinateur, téléphone). Les commandes reçues pendant que l'administration était fermée sont signalées à sa prochaine ouverture.</p>
         </div>
       </div>
     </section>
