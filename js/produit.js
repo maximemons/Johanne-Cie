@@ -2,8 +2,10 @@ import { $, showToast, saveCart, catalog, subscribeCatalog } from "./shop-common
 import { loadCart, addItem } from "./cart.js";
 import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
-  productImages, productUrl, formatParts, formatPrixPour
+  productImages, productUrl, formatParts, formatPrixPour,
+  isOrderable, isPreorder, preorderLabel, seasonWindow, formatDateFR
 } from "./catalog.js";
+import { toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
 
 const productId = new URLSearchParams(window.location.search).get("id");
 const state = { qty: 1, galleryIndex: 0 };
@@ -12,12 +14,11 @@ const productDetail = $("product-detail");
 function addToCart(id, qty) {
   const product = catalog.products.find((p) => p.id === id);
   if (!product) return;
-  const av = getAvailability(product);
-  if (!av.available) return showToast(`Indisponible (${av.reason})`);
+  if (!isOrderable(product)) return showToast(`Indisponible (${getAvailability(product).reason})`);
   const cart = loadCart();
   addItem(cart, product, qty);
   saveCart(cart);
-  showToast("Ajouté au panier");
+  showToast(isPreorder(product) ? "Précommande ajoutée au panier" : "Ajouté au panier");
 }
 
 const QTY_MAX = 50;
@@ -41,6 +42,9 @@ function renderProductPage() {
   const groups = groupByCategory(catalog.categories, catalog.products);
   const group = groups.find((g) => g.products.some((x) => x.id === p.id));
   const av = getAvailability(p);
+  const orderable = isOrderable(p);
+  const preorder = isPreorder(p);
+  const win = preorder ? seasonWindow(p.saison) : null;
   const imgs = productImages(p);
   const idx = Math.min(state.galleryIndex, Math.max(imgs.length - 1, 0));
   const season = seasonLabel(p.saison);
@@ -48,7 +52,7 @@ function renderProductPage() {
 
   // Galerie
   const main = imgs.length
-    ? `<img src="${esc(imgs[idx])}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${av.available ? "" : "grayscale opacity-75"}" />`
+    ? `<img src="${esc(imgs[idx])}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${orderable ? "" : "grayscale opacity-75"}" />`
     : `<img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-full object-contain p-10 opacity-80" />`;
   const thumbs = imgs.length > 1
     ? `<div class="flex gap-3 mt-3 overflow-x-auto">${imgs.map((u, i) => `
@@ -95,14 +99,17 @@ function renderProductPage() {
        </section>`
     : "";
 
-  const action = av.available
-    ? `<div class="flex flex-wrap items-stretch gap-3">
+  const preorderNote = preorder
+    ? `<p class="text-xs leading-relaxed border border-[#2C2A29]/20 bg-[#F4F0E8] p-3">Hors saison aujourd'hui : vous pouvez la précommander dès maintenant pour un retrait entre le <strong>${esc(formatDateFR(win.start, false))}</strong> et le <strong>${esc(win.end ? formatDateFR(win.end) : "")}</strong>. La date se choisit dans le panier.</p>`
+    : "";
+  const action = orderable
+    ? `${preorderNote}<div class="flex flex-wrap items-stretch gap-3">
          <div class="flex items-center border border-[#2C2A29]/25">
            <button type="button" data-qty-step="-1" aria-label="Moins" class="px-4 py-3 text-sm hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">&minus;</button>
            <span id="product-qty" class="px-4 py-3 text-sm font-medium min-w-[3rem] text-center">${state.qty}</span>
            <button type="button" data-qty-step="1" aria-label="Plus" class="px-4 py-3 text-sm hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">+</button>
          </div>
-         <button type="button" data-product-add class="flex-1 min-w-[12rem] py-3 px-6 bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E] transition-colors text-xs uppercase tracking-[0.22em]">Ajouter au panier</button>
+         <button type="button" data-product-add class="flex-1 min-w-[12rem] py-3 px-6 bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E] transition-colors text-xs uppercase tracking-[0.22em]">${preorder ? "Précommander" : "Ajouter au panier"}</button>
        </div>`
     : `<button type="button" disabled class="w-full py-3 px-6 border border-[#2C2A29]/25 text-[#7F7973] bg-[#FDFBF7] text-xs uppercase tracking-[0.22em] cursor-not-allowed">${esc(av.reason)}</button>`;
 
@@ -118,14 +125,19 @@ function renderProductPage() {
       <div>
         <div class="relative aspect-[4/3] sm:aspect-square overflow-hidden border border-[#2C2A29]/15 bg-[#F4F0E8]">
           ${main}
-          ${av.available ? "" : `<span class="absolute top-4 right-4 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>`}
+          ${orderable
+            ? (preorder ? `<span class="absolute top-4 right-4 bg-[#FDFBF7] text-[#2C2A29] border border-[#2C2A29]/40 px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(preorderLabel(p))}</span>` : "")
+            : `<span class="absolute top-4 right-4 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>`}
         </div>
         ${thumbs}
       </div>
 
       <div class="space-y-6">
         ${group || p.bestSeller === true ? `<p class="text-[10px] uppercase tracking-[0.25em] text-[#7F7973]">${group ? esc(group.nom) : ""}${p.bestSeller === true ? `${group ? " &middot; " : ""}<span class="text-[#2C2A29]">&#9733; Best-Seller</span>` : ""}</p>` : ""}
-        <h1 class="font-serif text-4xl sm:text-5xl leading-tight">${esc(p.nom)}</h1>
+        <div class="flex items-start justify-between gap-4">
+          <h1 class="font-serif text-4xl sm:text-5xl leading-tight">${esc(p.nom)}</h1>
+          ${heartButton(p.id, p.nom, "shrink-0 mt-2")}
+        </div>
         <div>
           <p class="font-serif text-3xl">${formatPrice(p.prix)}</p>
           ${formatPrixPour(p.prixPour) ? `<p class="mt-1 text-xs uppercase tracking-[0.2em] text-[#7F7973]">Pour ${esc(formatPrixPour(p.prixPour))}</p>` : ""}
@@ -154,7 +166,10 @@ productDetail.addEventListener("click", (e) => {
   const step = e.target.closest("button[data-qty-step]");
   const add = e.target.closest("button[data-product-add]");
   const scroll = e.target.closest("a[data-scroll]");
-  if (thumb) {
+  const fav = e.target.closest("button[data-fav-id]");
+  if (fav) {
+    showToast(toggleFavorite(fav.dataset.favId) ? "Ajouté aux favoris" : "Retiré des favoris");
+  } else if (thumb) {
     state.galleryIndex = Number(thumb.dataset.galleryIdx);
     renderProductPage();
   } else if (step) {
@@ -188,4 +203,8 @@ productDetail.addEventListener("click", (e) => {
 });
 
 subscribeCatalog(renderProductPage);
+onFavoritesChange(() => {
+  const btn = productDetail.querySelector("button[data-fav-id]");
+  if (btn) btn.outerHTML = heartButton(btn.dataset.favId, catalog.products.find((x) => x.id === productId)?.nom, "shrink-0 mt-2");
+});
 renderProductPage();

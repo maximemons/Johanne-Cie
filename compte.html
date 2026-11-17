@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mon compte — Johanne &amp; Cie</title>
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Montserrat:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="bg-[#FDFBF7] text-[#2C2A29] antialiased selection:bg-[#2C2A29] selection:text-[#FDFBF7] min-h-screen flex flex-col">
+
+  <!-- En-tête : logo + panier (liens réels vers index.html / panier.html) -->
+  <header class="sticky top-0 z-40 bg-[#FDFBF7]/95 backdrop-blur-sm border-b border-[#2C2A29]/15">
+    <div class="max-w-6xl mx-auto px-4 sm:px-8 py-4 flex items-center justify-between gap-4">
+      <div class="w-[5.5rem] hidden sm:block" aria-hidden="true"></div>
+
+      <a id="nav-logo-link" href="index.html" aria-label="Accueil Pâtisseries" class="mx-auto block w-full max-w-[300px] sm:max-w-[350px] focus:outline-none transition-opacity hover:opacity-90">
+        <img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-auto" />
+      </a>
+
+      <div class="flex items-center gap-2">
+        <a id="nav-account-link" href="compte.html" aria-label="Mon compte : commandes, fidélité" title="Mon compte" class="relative p-2.5 border border-[#2C2A29]/20 hover:border-[#2C2A29] transition-colors flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-[#2C2A29]" fill="none" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.1a7.5 7.5 0 0 1 15 0A17.9 17.9 0 0 1 12 21.75c-2.68 0-5.22-.59-7.5-1.65Z" /></svg>
+        </a>
+      <a id="nav-cart-link" href="panier.html" aria-label="Panier" class="relative p-2.5 border border-[#2C2A29]/20 hover:border-[#2C2A29] transition-colors flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-[#2C2A29]" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007ZM8.625 10.5a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+        </svg>
+        <span id="cart-badge" class="hidden absolute -top-2 -right-2 bg-[#2C2A29] text-[#FDFBF7] text-[10px] font-medium w-5 h-5 rounded-full flex items-center justify-center">0</span>
+      </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-10 space-y-10">
+    <div class="flex flex-wrap items-end justify-between gap-4 border-b border-[#2C2A29]/15 pb-4">
+      <h1 class="font-serif text-3xl tracking-wide">Mon compte</h1>
+      <a href="index.html" data-restore class="text-xs uppercase tracking-[0.2em] text-[#7F7973] hover:text-[#2C2A29] transition-colors">&larr; Retour aux pâtisseries</a>
+    </div>
+
+    <p id="account-loading" class="text-center text-xs uppercase tracking-[0.2em] text-[#7F7973] py-16">Chargement...</p>
+    <div id="account-gate" class="hidden max-w-md mx-auto border border-[#2C2A29] bg-white p-6 sm:p-8 space-y-5"></div>
+
+    <div id="account-main" class="hidden space-y-12">
+      <div class="flex flex-wrap items-center justify-between gap-3 bg-white p-4 border border-[#2C2A29]/15">
+        <div class="min-w-0">
+          <p class="text-[10px] uppercase tracking-[0.2em] text-[#7F7973]">Connecté</p>
+          <p id="account-email" class="text-sm font-medium truncate"></p>
+        </div>
+        <button id="account-signout" type="button" class="text-[11px] uppercase tracking-[0.15em] underline text-[#7F7973] hover:text-[#2C2A29]">Déconnexion</button>
+      </div>
+
+      <!-- Fidélité (masquée si le programme est désactivé) -->
+      <section id="fidelite" class="hidden space-y-4" aria-labelledby="fidelite-title"></section>
+
+      <!-- Historique -->
+      <section class="space-y-5" aria-labelledby="orders-title">
+        <h2 id="orders-title" class="font-serif text-2xl">Mes commandes</h2>
+        <div id="my-orders" class="space-y-4"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Pied de page sobre -->
+  <footer class="border-t border-[#2C2A29]/15 py-6 text-center text-[11px] uppercase tracking-[0.25em] text-[#7F7973]">
+    Maison Johanne &amp; Cie &mdash; Pâtisserie Fines &mdash; Mons &mdash; Ceuninck
+  </footer>
+
+  <!-- Toast de notification -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 bg-[#2C2A29] text-[#FDFBF7] px-5 py-3 text-xs uppercase tracking-[0.18em] shadow-lg translate-y-20 opacity-0 transition-all duration-300 pointer-events-none"></div>
+
+  <script type="module" src="js/compte.js"></script>
+</body>
+</html>

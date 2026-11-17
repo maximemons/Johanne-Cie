@@ -16,18 +16,23 @@
   <!-- En-tête : logo + panier (liens réels vers index.html / panier.html) -->
   <header class="sticky top-0 z-40 bg-[#FDFBF7]/95 backdrop-blur-sm border-b border-[#2C2A29]/15">
     <div class="max-w-6xl mx-auto px-4 sm:px-8 py-4 flex items-center justify-between gap-4">
-      <div class="w-10 hidden sm:block" aria-hidden="true"></div>
+      <div class="w-[5.5rem] hidden sm:block" aria-hidden="true"></div>
 
       <a id="nav-logo-link" href="index.html" aria-label="Accueil Pâtisseries" class="mx-auto block w-full max-w-[300px] sm:max-w-[350px] focus:outline-none transition-opacity hover:opacity-90">
         <img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-auto" />
       </a>
 
+      <div class="flex items-center gap-2">
+        <a id="nav-account-link" href="compte.html" aria-label="Mon compte : commandes, fidélité" title="Mon compte" class="relative p-2.5 border border-[#2C2A29]/20 hover:border-[#2C2A29] transition-colors flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-[#2C2A29]" fill="none" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.1a7.5 7.5 0 0 1 15 0A17.9 17.9 0 0 1 12 21.75c-2.68 0-5.22-.59-7.5-1.65Z" /></svg>
+        </a>
       <a id="nav-cart-link" href="panier.html" aria-label="Panier" class="relative p-2.5 border border-[#2C2A29]/20 hover:border-[#2C2A29] transition-colors flex items-center justify-center">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-[#2C2A29]" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007ZM8.625 10.5a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
         </svg>
         <span id="cart-badge" class="hidden absolute -top-2 -right-2 bg-[#2C2A29] text-[#FDFBF7] text-[10px] font-medium w-5 h-5 rounded-full flex items-center justify-center">0</span>
       </a>
+      </div>
     </div>
   </header>
 

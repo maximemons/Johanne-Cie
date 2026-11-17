@@ -53,3 +53,30 @@ body {
 .row-arrow-prev { left: -0.5rem; }
 .row-arrow-next { right: -0.5rem; }
 @media (max-width: 639px) { .row-arrow { display: none !important; } }
+
+/* Favoris : cœur sur les cartes et la fiche produit */
+.fav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  background: rgba(253, 251, 247, 0.92);
+  border: 1px solid rgba(44, 42, 41, 0.2);
+  color: #2C2A29;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.fav-btn svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
+.fav-btn:hover { border-color: #2C2A29; }
+.fav-btn.is-on { color: #A3243B; border-color: #A3243B; }
+.fav-btn.is-on svg { fill: currentColor; }
+.fav-btn:active { transform: scale(0.92); }
+.fav-btn:focus-visible { outline: 2px solid #2C2A29; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .fav-btn { transition: none; } .fav-btn:active { transform: none; } }
+
+/* Message en tête de page (ex. après « Recommander ») */
+.flash { border: 1px solid; padding: 1rem 1.25rem; font-size: 0.8125rem; line-height: 1.6; }
+.flash-info { background: #F4F0E8; border-color: rgba(44, 42, 41, 0.25); }
+.flash-warn { background: #FFFBEB; border-color: #FCD34D; color: #78350F; }

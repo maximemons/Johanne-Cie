@@ -1,5 +1,5 @@
 // Éléments communs aux pages boutique (index.html, produit.html, panier.html)
-import { db } from "./firebase-config.js";
+import { db } from "./config.js";
 import { loadCart, persistCart, getCartCount } from "./cart.js";
 import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 

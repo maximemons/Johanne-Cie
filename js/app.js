@@ -2,8 +2,9 @@ import { $, showToast, saveCart, catalog, subscribeCatalog, LIST_STATE_KEY, REST
 import { loadCart, addItem } from "./cart.js";
 import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
-  productUrl, formatParts, formatPrixPour, shopGroups
+  productUrl, formatParts, formatPrixPour, shopGroups, isOrderable, isPreorder, preorderLabel
 } from "./catalog.js";
+import { getFavorites, toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
 
 const state = {
   activeCategory: null,   // catégorie en cours (scrollspy)
@@ -38,7 +39,7 @@ new ResizeObserver(syncStickyOffsets).observe(siteHeader);
 const stickyOffset = () => siteHeader.offsetHeight + categoriesBar.offsetHeight;
 
 function renderCategories() {
-  const groups = shopGroups(catalog.categories, catalog.products);
+  const groups = shopGroups(catalog.categories, catalog.products, getFavorites());
 
   if (catalog.products.length === 0) {
     categoriesBar.innerHTML = "";
@@ -131,24 +132,34 @@ categoriesBar.addEventListener("click", (e) => {
 
 function productCard(p, catLabel) {
   const av = getAvailability(p);
-  const off = !av.available;
+  const preorder = isPreorder(p);           // hors saison, mais commandable pour une date dans sa saison
+  const blocked = !isOrderable(p);          // épuisé ou retiré manuellement
   const season = seasonLabel(p.saison);
   const parts = formatParts(p.parts);
   const pour = formatPrixPour(p.prixPour);
   const img = p.imageUrl
-    ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${off ? "grayscale opacity-75" : ""}" loading="lazy" />`
+    ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${blocked ? "grayscale opacity-75" : ""}" loading="lazy" />`
     : `<img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-full object-contain p-6 bg-[#FDFBF7] opacity-80" />`;
-  const badge =
-    (off ? `<span class="absolute top-3 right-3 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>` : "") +
+  const stateBadge = blocked
+    ? `<span class="absolute top-3 right-3 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>`
+    : preorder
+      ? `<span class="absolute top-3 right-3 bg-[#FDFBF7] text-[#2C2A29] border border-[#2C2A29]/40 px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(preorderLabel(p))}</span>`
+      : "";
+  const badge = stateBadge +
     (p.bestSeller === true ? `<span class="absolute top-3 left-3 bg-[#FDFBF7] text-[#2C2A29] border border-[#2C2A29] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em]">&#9733; Best-Seller</span>` : "");
-  const action = off
+  const action = blocked
     ? `<button type="button" disabled class="w-full py-2.5 px-4 border border-[#2C2A29]/25 text-[#7F7973] bg-[#FDFBF7] text-[11px] uppercase tracking-[0.2em] cursor-not-allowed">${esc(av.reason)}</button>`
-    : `<button type="button" data-add-id="${esc(p.id)}" class="w-full py-2.5 px-4 bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E] transition-colors text-[11px] uppercase tracking-[0.2em]">Ajouter au panier</button>`;
+    : preorder
+      ? `<button type="button" data-add-id="${esc(p.id)}" class="w-full py-2.5 px-4 border border-[#2C2A29] text-[#2C2A29] bg-[#FDFBF7] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors text-[11px] uppercase tracking-[0.2em]">Précommander</button>`
+      : `<button type="button" data-add-id="${esc(p.id)}" class="w-full py-2.5 px-4 bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E] transition-colors text-[11px] uppercase tracking-[0.2em]">Ajouter au panier</button>`;
 
   return `
     <article class="row-card product-card border border-[#2C2A29]/15 bg-white flex flex-col justify-between">
       <div>
-        <a href="${productUrl(p.id)}" class="block relative aspect-[4/3] overflow-hidden border-b border-[#2C2A29]/10 bg-[#F4F0E8]" aria-label="Voir ${esc(p.nom)}">${img}${badge}</a>
+        <div class="relative">
+          <a href="${productUrl(p.id)}" class="block relative aspect-[4/3] overflow-hidden border-b border-[#2C2A29]/10 bg-[#F4F0E8]" aria-label="Voir ${esc(p.nom)}">${img}${badge}</a>
+          ${heartButton(p.id, p.nom, "absolute bottom-3 right-3")}
+        </div>
         ${parts ? `<p class="px-6 pt-3 text-[10px] uppercase tracking-[0.22em] text-[#2C2A29]">${esc(parts)}</p>` : ""}
         <div class="${parts ? "px-6 pb-6 pt-2" : "p-6"} space-y-2">
           <p class="text-[10px] uppercase tracking-[0.22em] text-[#7F7973]">${esc(catLabel)}</p>
@@ -182,12 +193,11 @@ function renderProducts() {
   // Dans la fausse catégorie « Best-Sellers », chaque carte indique sa vraie catégorie
   const realName = new Map(groupByCategory(catalog.categories, catalog.products).flatMap((g) => g.products.map((p) => [p.id, g.nom])));
 
-  productsGrid.innerHTML = shopGroups(catalog.categories, catalog.products)
+  productsGrid.innerHTML = shopGroups(catalog.categories, catalog.products, getFavorites())
     .map((g) => {
-      // au sein d'une catégorie, les créations disponibles passent d'abord
-      const items = [...g.products].sort(
-        (a, b) => Number(!getAvailability(a).available) - Number(!getAvailability(b).available)
-      );
+      // au sein d'une catégorie : disponibles, puis précommandes, puis indisponibles
+      const rank = (p) => (getAvailability(p).available ? 0 : isOrderable(p) ? 1 : 2);
+      const items = [...g.products].sort((a, b) => rank(a) - rank(b));
       return `
         <section id="cat-${esc(g.id)}" data-cat-section="${esc(g.id)}" class="row-section" aria-label="${esc(g.nom)}">
           <div class="row-scroller">${items.map((p) => productCard(p, g.virtual ? realName.get(p.id) : g.nom)).join("")}</div>
@@ -249,19 +259,27 @@ productsGrid.addEventListener("click", (e) => {
 
 productsGrid.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-add-id]");
+  const fav = e.target.closest("button[data-fav-id]");
   if (btn) addToCart(btn.dataset.addId);
+  else if (fav) showToast(toggleFavorite(fav.dataset.favId) ? "Ajouté aux favoris" : "Retiré des favoris");
 });
 
 function addToCart(productId, qty = 1) {
   const product = catalog.products.find((p) => p.id === productId);
   if (!product) return;
-  const av = getAvailability(product);
-  if (!av.available) return showToast(`Indisponible (${av.reason})`);
+  if (!isOrderable(product)) return showToast(`Indisponible (${getAvailability(product).reason})`);
   const cart = loadCart();
   addItem(cart, product, qty);
   saveCart(cart);
-  showToast("Ajouté au panier");
+  showToast(isPreorder(product) ? `Précommande ajoutée : ${preorderLabel(product).replace("Précommande dès", "retrait dès")}` : "Ajouté au panier");
 }
+
+// Favoris modifiés (ici, dans un autre onglet ou depuis le compte) : la catégorie « Favoris » suit
+onFavoritesChange(() => {
+  if (!catalog.ready) return;
+  renderCategories();
+  renderProducts();
+});
 
 // ---------- Position de la liste (retour depuis une fiche produit / le panier) ----------
 // Sauvegardée en quittant la page ; retrouvée au retour (bouton précédent, rechargement, ou lien « Retour »).

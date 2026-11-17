@@ -157,19 +157,48 @@ export function lineChartSVG({ points, ref = null, fmt = String, today = todayIS
 }
 
 // ---------- Prix de vente suggéré à partir du prix de revient ----------
-export const MAX_MARKUP_PCT = 40;
+// Réglages modifiables dans l'onglet « Paramètres » de l'admin (document Firestore parametres/prix).
+export const DEFAULT_PRICING = { tauxPct: 40, mode: "majoration", arrondi: 0.5 };
+
+export function normalizePricing(raw) {
+  const t = Number(raw?.tauxPct);
+  return {
+    tauxPct: t > 0 && t < 1000 ? t : DEFAULT_PRICING.tauxPct,
+    mode: raw?.mode === "marge" ? "marge" : "majoration",
+    arrondi: Number(raw?.arrondi) === 1 ? 1 : 0.5
+  };
+}
+
+/** Prix « exact » avant arrondi. majoration : revient × (1 + t) ; marge : revient ÷ (1 − t) (t % du prix de vente). */
+export function targetPrice(cost, pricing = DEFAULT_PRICING) {
+  const { tauxPct, mode } = normalizePricing(pricing);
+  const c = Number(cost);
+  if (!(c > 0)) return null;
+  if (mode === "marge") return tauxPct < 100 ? c / (1 - tauxPct / 100) : null;
+  return c * (1 + tauxPct / 100);
+}
 
 /**
- * Prix de vente maximal : revient + 40 %, arrondi au 0,50 € INFÉRIEUR (jamais au-dessus du plafond),
- * donc toujours en « ,00 » ou « ,50 ». Calcul en centimes entiers pour éviter les erreurs de virgule flottante.
- * Retourne null si aucun prix rond ne tient dans [revient ; revient + 40 %] (revient minuscule).
+ * Prix de vente suggéré : prix cible arrondi à l'euro ou au 0,50 € LE PLUS PROCHE.
+ * Calcul en centimes entiers pour éviter les erreurs de virgule flottante.
+ * Le prix suggéré reste toujours strictement au-dessus du revient.
  */
-export function suggestSellingPrice(cost, maxMarkupPct = MAX_MARKUP_PCT, stepCents = 50) {
-  const cents = Math.round(Number(cost) * 100);
-  if (!(cents > 0)) return null;
-  const maxCents = Math.floor((cents * (100 + maxMarkupPct)) / 100);
-  const priceCents = Math.floor(maxCents / stepCents) * stepCents;
-  return priceCents >= cents ? priceCents / 100 : null;
+export function suggestSellingPrice(cost, pricing = DEFAULT_PRICING) {
+  const { arrondi } = normalizePricing(pricing);
+  const target = targetPrice(cost, pricing);
+  if (target == null) return null;
+  const step = Math.round(arrondi * 100);
+  const costCents = Math.round(Number(cost) * 100);
+  let cents = Math.round(Math.round(target * 100) / step) * step;
+  while (cents <= costCents) cents += step;
+  return cents / 100;
+}
+
+export function pricingRuleLabel(pricing = DEFAULT_PRICING) {
+  const { tauxPct, mode, arrondi } = normalizePricing(pricing);
+  const t = tauxPct.toLocaleString("fr-FR");
+  const rule = mode === "marge" ? `marge de ${t} % du prix de vente` : `prix de revient + ${t} %`;
+  return `${rule}, arrondi ${arrondi === 1 ? "à l'euro" : "au 0,50 €"} le plus proche`;
 }
 
 /** Majoration d'un prix de vente par rapport au revient, en % (ex. 20 € pour 14,50 € → +37,9 %). */

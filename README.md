@@ -7,9 +7,10 @@ Maison Johanne & Cie — site de commande connecté à Firebase (`johanne-and-ci
 | `index.html` | liste des pâtisseries, par catégorie | `js/app.js` |
 | `produit.html?id=…` | fiche d'une pâtisserie | `js/produit.js` |
 | `panier.html` | panier, identification, commande | `js/panier.js` |
+| `compte.html` | mon compte : fidélité, historique des commandes | `js/compte.js` |
 | `admin.html` | administration | `js/admin.js` |
 
-`js/shop-common.js` regroupe ce que partagent les trois pages boutique (catalogue en temps réel, pastille du panier, notifications). Le panier est conservé dans le navigateur (`localStorage`) et donc partagé entre les pages.
+`js/config.js` contient toute la configuration (Firebase + EmailJS). `js/shop-common.js` regroupe ce que partagent les pages boutique (catalogue en temps réel, pastille du panier, notifications). Le panier est conservé dans le navigateur (`localStorage`) et donc partagé entre les pages.
 
 ## Boutique
 - **Best-Sellers** : sélection manuelle (étoile ★ sur la liste des pâtisseries en admin), sans lien avec les ventes. Ils apparaissent dans une fausse catégorie « Best-Sellers », en première position de la liste et de la barre de catégories (elle disparaît s'il n'y en a aucun). Un best-seller reste aussi dans sa vraie catégorie, avec une pastille ★.
@@ -18,12 +19,36 @@ Maison Johanne & Cie — site de commande connecté à Firebase (`johanne-and-ci
 - **Le panier exige une connexion** (Google, e-mail + mot de passe, ou lien e-mail sans mot de passe). La navigation et l'ajout au panier restent libres ; l'écran du panier affiche d'abord l'identification. La session est conservée dans le navigateur (persistance locale), donc le client reste connecté d'une visite à l'autre.
 - Panier : **une date souhaitée par article**. La date du premier article est reprise par les autres tant qu'elle n'est pas modifiée à la main (bouton « Même date pour tous » pour tout réaligner).
 - À la validation, chaque date est vérifiée (à partir de demain, et création de saison à cette date).
+- **Précommande hors saison** : une création saisonnière hors de sa saison reste visible avec la pastille « Précommande dès août » et un bouton « Précommander ». Dans le panier, son calendrier n'est ouvert que sur sa saison (ex. commandée en mai pour une saison d'août : dates du 1er au 31 août uniquement). Seuls « Épuisé » et « Hors-Saison » (retrait manuel) rendent une création non commandable. Les articles concernés sont marqués « Précommande » côté admin.
+- **Favoris** : un cœur sur chaque carte et sur la fiche produit. Dès qu'il y a un favori, une catégorie « ♥ Favoris » apparaît en première position (avant « Best-Sellers »). Les favoris sont gardés dans le navigateur et, une fois connecté, synchronisés avec le compte (`clients/{uid}`), donc retrouvés sur tous les appareils.
+- **Mon compte** (`compte.html`, icône en haut à droite) : points de fidélité et historique des commandes avec leur statut.
+  - **Recommander** remet les articles dans le panier aux prix actuels puis ouvre le panier, avec un message qui détaille ce qui n'a pas pu être ajouté (épuisé, retiré, plus à la carte) et les créations hors saison ajoutées en précommande.
+  - **Annuler la commande** est possible tant que l'atelier ne l'a pas passée « En préparation ». L'atelier reçoit un e-mail.
+- **Fidélité** : 1 € = 1 point (arrondi à l'inférieur : 4,50 € = 4 pts). Les points sont gagnés quand l'atelier accepte la commande ; une commande refusée ou annulée ne rapporte rien et rend les points utilisés. Dans le panier, le client choisit s'il utilise une récompense (une par commande) ; la remise apparaît sur la commande côté admin. Si une validité est réglée, chaque point expire N jours après la commande qui l'a rapporté (les points dépensés sont pris parmi les plus anciens).
 
 ## Administration (`admin.html`, `pro.maxime.mons@gmail.com`, via Google ou lien e-mail)
-- **Commandes** : vue par commande (changement de statut, suppression) ou **par jour** (planning de production : total à préparer par création).
+- **Commandes** : vue par commande ou **par jour** (planning de production : total à préparer par création). Cycle : *En attente* → **Accepter** / **Refuser** (motif facultatif, affiché au client) → **En préparation** → *Prête* → *Retirée*. Un sélecteur permet aussi de forcer un statut. Les anciennes commandes « Confirmée » sont lues comme « Acceptée ». Une annulation par le client est signalée sur la commande.
+- **Paramètres** : taux du prix suggéré (majoration du revient ou marge sur le prix de vente, arrondi au 0,50 € ou à l'euro le plus proche), programme de fidélité (activation, texte de présentation affiché aux clients, récompenses « X pts = Y % », validité des points en jours glissants), état des notifications e-mail.
 - **Pâtisseries & Stocks** : étoile ★ Best-Seller (clic pour activer / retirer, filtre et compteur), créer / modifier / supprimer (avec la fiche détaillée : images supplémentaires, composition, allergènes, parts, poids, avertissement de conservation), bouton rapide « Marquer épuisé / Remettre en stock », **saisonnalité** (période de mois, y compris à cheval sur deux années).
-- **Prix de revient** (privé) : saisie depuis le formulaire d'une pâtisserie ou depuis l'onglet dédié. Chaque modification est datée et conservée (une valeur par jour, note optionnelle, suppression possible). L'onglet affiche marge en € et en %, coefficient, variation depuis le premier relevé, un graphique par pâtisserie (courbe en escalier + prix de vente en pointillés) et un indice global d'évolution des coûts (base 100). **Prix de vente suggéré** : dès qu'un nouveau prix de revient devient le prix actuel (formulaire pâtisserie ou panneau d'historique), une popup propose de fixer le prix de vente à **revient + 40 % maximum, arrondi au 0,50 € inférieur** (donc toujours en `,00` ou `,50` — ex. revient 14,50 € → plafond 20,30 € → **20,00 €**). « Valider » met à jour le prix de vente de la pâtisserie ; « Garder » (ou Échap) ne change rien. Aucune popup si le prix est déjà le prix suggéré, si le relevé est daté avant le dernier, ou si aucun prix rond ne tient dans la fourchette. Le plafond est la constante `MAX_MARKUP_PCT` de `js/costs.js`. Ces données sont stockées dans la collection `couts`, **réservée à l'admin par `firestore.rules`** : jamais dans `patisseries`, jamais lues par la boutique.
+- **Prix de revient** (privé) : saisie depuis le formulaire d'une pâtisserie ou depuis l'onglet dédié. Chaque modification est datée et conservée (une valeur par jour, note optionnelle, suppression possible). L'onglet affiche marge en € et en %, coefficient, variation depuis le premier relevé, un graphique par pâtisserie (courbe en escalier + prix de vente en pointillés) et un indice global d'évolution des coûts (base 100). **Prix de vente suggéré** : dès qu'un prix de revient est saisi dans le formulaire d'une pâtisserie (création ou modification), une popup propose un prix de vente ; « Valider » le place dans le champ Prix, qu'il reste à enregistrer. Depuis le panneau d'historique, « Valider » met directement à jour la pâtisserie. Règle par défaut : revient + 40 %, arrondi au 0,50 € le plus proche (ex. revient 14,50 € → 20,30 € → **20,50 €**), réglable dans **Paramètres** (stocké dans `parametres/prix`, privé). Aucune popup si le prix est déjà le prix suggéré ou si le relevé est daté avant le dernier. Ces données sont stockées dans la collection `couts`, **réservée à l'admin par `firestore.rules`** : jamais dans `patisseries`, jamais lues par la boutique.
 - **Catégories** : créer, réordonner, masquer (« rendre indisponible ») ou supprimer.
+
+## Notifications e-mail (EmailJS)
+Un e-mail est envoyé à l'atelier à chaque commande passée et à chaque annulation par un client. Configuration dans `js/config.js` (objet `EMAILJS`) ; tant que la clé publique est vide, rien n'est envoyé et les commandes fonctionnent normalement.
+
+Modèle EmailJS conseillé (un seul modèle peut servir aux deux événements) — destinataire `{{to_email}}`, objet `{{evenement}} #{{commande_id}}`, corps :
+```
+{{evenement}} — commande #{{commande_id}}
+Client : {{client_email}}
+Total : {{total}}
+{{remise}}
+
+{{details}}
+
+Note : {{notes}}
+Gérer : {{admin_url}}
+```
+Pensez à ajouter le domaine du site dans *EmailJS → Account → Security*. L'adresse e-mail du client transite par EmailJS : à mentionner dans votre politique de confidentialité (RGPD).
 
 ## Déploiement
 ```
@@ -31,5 +56,5 @@ firebase deploy --only hosting,firestore:rules
 ```
 `firebase.json` ne définit ni réécriture ni « URL propres » (`cleanUrls: false`) : les adresses restent `…/panier.html`, `…/produit.html?id=…`, `…/admin.html`. Les liens de connexion par e-mail renvoient vers `panier.html` (client) et `admin.html` (admin).
 
-Les règles `firestore.rules` sont **indispensables** (en particulier pour la collection privée `couts`) : sans elles, la sécurité de l'admin ne repose que sur le navigateur.
+Les règles `firestore.rules` (fournies) sont **indispensables** : collection privée `couts`, lecture de ses seules commandes par le client, annulation limitée aux commandes pas encore « En préparation », `parametres/prix` réservé à l'admin, favoris `clients/{uid}` réservés à leur propriétaire : sans elles, la sécurité de l'admin ne repose que sur le navigateur.
 Console Firebase → Authentication → Méthode de connexion : activer **Google**, **E-mail/Mot de passe** et **Lien envoyé par e-mail** (case à cocher dans le fournisseur E-mail/Mot de passe). Dans *Paramètres → Domaines autorisés*, ajouter le domaine du site (nécessaire pour les liens e-mail).

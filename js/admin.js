@@ -1,14 +1,17 @@
-import { db, auth, authReady } from "./firebase-config.js";
+import { db, auth, authReady, EMAILJS } from "./config.js";
 import {
   ADMIN_EMAIL, EMAIL_LINK_KEY, ALLERGENES, BEST_ID, AUTRE_ID, AUTRE_LABEL, MOIS, ORDER_STATUTS,
   esc, formatPrice, formatDateFR, todayISO, tomorrowISO, catName, isCategoryActive,
-  groupByCategory, normalizeStatut, hasSeason, seasonLabel, isInSeason, formatPrixPour
+  groupByCategory, normalizeStatut, hasSeason, seasonLabel, isInSeason, formatPrixPour,
+  normalizeOrderStatut, isOrderOpen
 } from "./catalog.js";
 import {
   currentCost, sortHistory, upsertEntry, removeEntry, marginOf, lastChange, pctChange,
   formatPct, formatNum, formatDateShort, globalIndexSeries, lineChartSVG,
-  suggestSellingPrice, markupPct, MAX_MARKUP_PCT
+  suggestSellingPrice, targetPrice, markupPct, pricingRuleLabel, normalizePricing, DEFAULT_PRICING
 } from "./costs.js";
+import { normalizeLoyalty, DEFAULT_LOYALTY } from "./loyalty.js";
+import { emailEnabled } from "./notify.js";
 import {
   collection, onSnapshot, addDoc, updateDoc, setDoc, deleteDoc, doc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
@@ -29,7 +32,11 @@ const state = {
   orderView: "commande",
   orderFilter: "ACTIVES",
   prodCat: "ALL",
-  prodSearch: ""
+  prodSearch: "",
+  pricing: { ...DEFAULT_PRICING },            // réglages du prix suggéré (parametres/prix, privé)
+  loyalty: normalizeLoyalty(DEFAULT_LOYALTY), // programme de fidélité (parametres/fidelite, public)
+  loyaltyDraft: null,                         // paliers en cours d'édition
+  dirty: { pricing: false, loyalty: false }   // un formulaire en cours d'édition n'est pas écrasé par le temps réel
 };
 let unsubscribers = [];
 
@@ -145,12 +152,20 @@ function startListeners() {
         console.error(err);
         $("orders-list").innerHTML = `<p class="text-xs text-red-700">Lecture des commandes refusée. Vérifiez que les règles Firestore (firestore.rules) sont déployées.</p>`;
       }
-    )
+    ),
+    onSnapshot(doc(db, "parametres", "prix"), (snap) => {
+      state.pricing = normalizePricing(snap.data());
+      renderSettings();
+    }, (err) => console.warn("Paramètres de prix :", err)),
+    onSnapshot(doc(db, "parametres", "fidelite"), (snap) => {
+      state.loyalty = normalizeLoyalty(snap.exists() ? snap.data() : DEFAULT_LOYALTY);
+      renderSettings();
+    }, (err) => console.warn("Paramètres de fidélité :", err))
   );
 }
 
 // ---------------- Onglets ----------------
-const TABS = ["commandes", "patisseries", "categories", "couts"];
+const TABS = ["commandes", "patisseries", "categories", "couts", "parametres"];
 function showTab(tab) {
   state.tab = tab;
   TABS.forEach((t) => $(`tab-${t}`).classList.toggle("hidden", t !== tab));
@@ -170,18 +185,36 @@ window.addEventListener("hashchange", () => {
 // =============================================================
 const STATUT_STYLE = {
   "En attente": "bg-amber-50 text-amber-800 border-amber-200",
-  "Confirmée": "bg-sky-50 text-sky-800 border-sky-200",
+  "Acceptée": "bg-sky-50 text-sky-800 border-sky-200",
+  "En préparation": "bg-violet-50 text-violet-800 border-violet-200",
   "Prête": "bg-emerald-50 text-emerald-800 border-emerald-200",
   "Retirée": "bg-stone-100 text-stone-600 border-stone-300",
+  "Refusée": "bg-red-50 text-red-800 border-red-200",
   "Annulée": "bg-red-50 text-red-800 border-red-200"
 };
+
+// Étapes proposées selon le statut : [libellé du bouton, statut visé, style]
+const NEXT_STEPS = {
+  "En attente": [["Accepter", "Acceptée", "primary"], ["Refuser", "Refusée", "danger"]],
+  "Acceptée": [["En préparation", "En préparation", "primary"], ["Refuser", "Refusée", "danger"]],
+  "En préparation": [["Marquer prête", "Prête", "primary"]],
+  "Prête": [["Marquer retirée", "Retirée", "primary"]]
+};
+const STEP_CLS = {
+  primary: "bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E]",
+  danger: "border border-red-300 text-red-700 hover:bg-red-700 hover:text-white"
+};
+// Horodatage enregistré à chaque étape
+const STEP_FIELD = { "Acceptée": "accepteeLe", "Refusée": "refuseeLe", "En préparation": "preparationLe", "Prête": "preteLe", "Retirée": "retireeLe", "Annulée": "annuleeLe" };
 
 // Chaque article porte sa propre date ; les anciennes commandes n'ont qu'une date globale
 const orderArticles = (o) =>
   (o.articles || []).map((a) => ({ ...a, date: a.dateRetrait || o.dateRetrait || "" }));
 
 const shortId = (o) => o.id.slice(0, 8).toUpperCase();
-const isOpen = (o) => !["Retirée", "Annulée"].includes(o.statut);
+const statutOf = (o) => normalizeOrderStatut(o.statut);
+const isOpen = isOrderOpen;
+const fmtTs = (ts) => (ts?.toDate ? ts.toDate().toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "");
 
 function initOrderControls() {
   $("order-filter").innerHTML =
@@ -202,7 +235,7 @@ document.querySelectorAll(".order-view-btn").forEach((b) =>
 );
 
 function renderOrders() {
-  const pending = state.orders.filter((o) => (o.statut || "En attente") === "En attente").length;
+  const pending = state.orders.filter((o) => statutOf(o) === "En attente").length;
   $("pending-badge").textContent = pending;
   $("pending-badge").classList.toggle("hidden", pending === 0);
   $("order-filter").classList.toggle("hidden", state.orderView === "jour");
@@ -214,21 +247,24 @@ function renderByOrder() {
   const list = state.orders.filter((o) => {
     if (state.orderFilter === "TOUTES") return true;
     if (state.orderFilter === "ACTIVES") return isOpen(o);
-    return (o.statut || "En attente") === state.orderFilter;
+    return statutOf(o) === state.orderFilter;
   });
   if (!list.length) return `<p class="text-xs text-[#7F7973]">Aucune commande dans cette vue.</p>`;
 
   return list.map((o) => {
     const placed = o.createdAt?.toDate ? o.createdAt.toDate().toLocaleString("fr-FR") : "À l'instant";
-    const statut = o.statut || "En attente";
+    const statut = statutOf(o);
     const lines = orderArticles(o).map((a) => `
       <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-        <span>${a.quantity} &times; ${esc(a.nom)} <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span></span>
+        <span>${a.quantity} &times; ${esc(a.nom)} <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${a.precommande ? ` <span class="text-[10px] uppercase tracking-[0.12em] border border-[#2C2A29]/30 px-1.5 py-0.5 ml-1">Précommande</span>` : ""}</span>
         <span class="text-[#2C2A29] font-medium">${esc(formatDateFR(a.date))}</span>
       </li>`).join("");
+    const steps = (NEXT_STEPS[statut] || []).map(([label, to, kind]) =>
+      `<button type="button" data-action="order-set" data-id="${esc(o.id)}" data-statut="${esc(to)}" class="px-4 py-2 text-[11px] uppercase tracking-[0.15em] transition-colors ${STEP_CLS[kind]}">${label}</button>`).join("");
+    const cancelledByClient = statut === "Annulée" && o.annuleePar === "client";
 
     return `
-      <article class="border border-[#2C2A29]/15 bg-white p-5 sm:p-6 space-y-4">
+      <article class="border ${statut === "En attente" ? "border-[#2C2A29]" : "border-[#2C2A29]/15"} bg-white p-5 sm:p-6 space-y-4">
         <div class="flex flex-wrap items-start justify-between gap-3 border-b border-[#2C2A29]/10 pb-3">
           <div>
             <span class="text-[10px] uppercase tracking-[0.2em] text-[#7F7973]">Commande #${esc(shortId(o))}</span>
@@ -237,18 +273,39 @@ function renderByOrder() {
           </div>
           <div class="text-right space-y-2">
             <span class="font-serif text-xl">${formatPrice(o.total)}</span>
-            <div><select data-action="order-status" data-id="${esc(o.id)}" class="px-2 py-1 text-xs border ${STATUT_STYLE[statut] || ""} focus:outline-none">
-              ${ORDER_STATUTS.map((s) => `<option ${s === statut ? "selected" : ""}>${s}</option>`).join("")}
-            </select></div>
+            <div><span class="inline-block text-[11px] px-2 py-0.5 border ${STATUT_STYLE[statut] || ""}">${esc(statut)}</span></div>
           </div>
         </div>
         <ul class="text-xs space-y-1.5">${lines}</ul>
+        ${o.remise?.montant ? `<p class="text-xs text-[#7F7973]">Sous-total ${formatPrice(o.sousTotal ?? (o.total + o.remise.montant))} &bull; remise fidélité −${formatPrice(o.remise.montant)} (−${o.remise.pct} %, ${o.remise.points} pts)</p>` : ""}
         ${o.notes ? `<div class="bg-[#FDFBF7] p-3 border border-[#2C2A29]/10 text-xs text-[#7F7973]"><strong class="text-[#2C2A29]">Note atelier :</strong> ${esc(o.notes)}</div>` : ""}
-        <div class="text-right">
-          <button type="button" data-action="order-delete" data-id="${esc(o.id)}" class="text-[10px] uppercase tracking-[0.15em] text-red-700 underline">Supprimer la commande</button>
+        ${cancelledByClient ? `<p class="text-xs bg-red-50 border border-red-200 text-red-800 p-3">Annulée par le client${fmtTs(o.annuleeLe) ? ` le ${esc(fmtTs(o.annuleeLe))}` : ""}.</p>` : ""}
+        ${statut === "Refusée" && o.motifRefus ? `<p class="text-xs text-[#7F7973]"><strong class="text-[#2C2A29]">Motif du refus :</strong> ${esc(o.motifRefus)}</p>` : ""}
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div class="flex flex-wrap gap-2">${steps}</div>
+          <div class="flex items-center gap-4">
+            <label class="text-[10px] uppercase tracking-[0.15em] text-[#7F7973] flex items-center gap-2">Statut
+              <select data-action="order-status" data-id="${esc(o.id)}" class="px-2 py-1 text-xs border border-[#2C2A29]/30 bg-[#FDFBF7] normal-case tracking-normal focus:outline-none">
+                ${ORDER_STATUTS.map((s) => `<option ${s === statut ? "selected" : ""}>${s}</option>`).join("")}
+              </select>
+            </label>
+            <button type="button" data-action="order-delete" data-id="${esc(o.id)}" class="text-[10px] uppercase tracking-[0.15em] text-red-700 underline">Supprimer</button>
+          </div>
         </div>
       </article>`;
   }).join("");
+}
+
+/** Change le statut d'une commande (avec motif facultatif en cas de refus). */
+function setOrderStatus(id, statut) {
+  const extra = {};
+  if (statut === "Refusée") {
+    const motif = window.prompt("Motif du refus (facultatif, affiché au client) :", "");
+    if (motif === null) return; // abandon
+    if (motif.trim()) extra.motifRefus = motif.trim();
+  }
+  if (STEP_FIELD[statut]) extra[STEP_FIELD[statut]] = serverTimestamp();
+  run(() => updateDoc(doc(db, "commandes", id), { statut, ...extra }), `Commande : ${statut.toLowerCase()}`);
 }
 
 // Planning de production : tout ce qu'il faut préparer, jour par jour
@@ -283,7 +340,7 @@ function renderByDay() {
           <p class="text-sm">${[...totals].map(([n, q]) => `<strong>${q}&times;</strong> ${esc(n)}`).join(" &nbsp;&bull;&nbsp; ")}</p>
         </div>
         <ul class="text-xs space-y-1 text-[#7F7973]">
-          ${lines.map((l) => `<li>${l.quantity} &times; ${esc(l.nom)} &mdash; #${esc(shortId(l.order))} &middot; ${esc(l.order.userEmail || "Client")} &middot; <em>${esc(l.order.statut || "En attente")}</em></li>`).join("")}
+          ${lines.map((l) => `<li>${l.quantity} &times; ${esc(l.nom)} &mdash; #${esc(shortId(l.order))} &middot; ${esc(l.order.userEmail || "Client")} &middot; <em>${esc(statutOf(l.order))}</em></li>`).join("")}
         </ul>
       </article>`;
   }).join("");
@@ -329,7 +386,29 @@ function renderProductForm() {
   f.value = fcur;
 }
 
+// Proposition de prix dès la saisie du prix de revient (création ou modification) :
+// « Valider » remplit le champ Prix du formulaire, qu'il reste à enregistrer.
+let formOfferedCost = null; // dernier revient pour lequel la popup a été proposée dans ce formulaire
+
+$("prod-revient").addEventListener("change", () => {
+  const raw = $("prod-revient").value.trim();
+  const cout = Number(raw);
+  if (raw === "" || !(cout > 0)) return;
+  const id = $("prod-edit-id").value;
+  if (id && cout === currentCost(state.couts[id]?.historique)) return; // inchangé
+  formOfferedCost = cout;
+  const prixRaw = $("prod-prix").value.trim();
+  offerSellingPrice({
+    id: id || null,
+    nom: $("prod-nom").value.trim() || "Nouvelle pâtisserie",
+    cout,
+    prix: prixRaw === "" ? null : Number(prixRaw),
+    target: "form"
+  });
+});
+
 function resetProductForm() {
+  formOfferedCost = null;
   productForm.reset();
   $("prod-edit-id").value = "";
   $("prod-saison-range").classList.add("hidden");
@@ -342,6 +421,8 @@ $("prod-cancel-edit").addEventListener("click", resetProductForm);
 productForm.addEventListener("submit", (e) => {
   e.preventDefault();
   if (!isAdmin(state.user)) return;
+  // La proposition de prix (ouverte par la saisie du revient) doit être tranchée avant d'enregistrer
+  if (!$("price-modal").classList.contains("hidden")) return;
   const id = $("prod-edit-id").value;
   const periode = $("prod-saison-mode").value === "periode";
   const pourNombre = parseInt($("prod-pour-nombre").value, 10);
@@ -375,7 +456,8 @@ productForm.addEventListener("submit", (e) => {
     // Un prix de revient modifié s'ajoute à l'historique (daté d'aujourd'hui)
     if (revient !== null && revient !== currentCost(state.couts[pid]?.historique)) {
       const { isCurrent } = await saveCost(pid, revient, todayISO());
-      if (isCurrent) offer = { id: pid, nom: data.nom, cout: revient, prix: data.prix };
+      // Popup après coup seulement si elle n'a pas déjà été proposée pendant la saisie
+      if (isCurrent && revient > 0 && formOfferedCost !== revient) offer = { id: pid, nom: data.nom, cout: revient, prix: data.prix, target: "db" };
     }
     resetProductForm();
     if (offer) offerSellingPrice(offer); // popup : valider le prix de vente suggéré
@@ -601,6 +683,16 @@ document.addEventListener("click", (e) => {
     if (confirm(`Supprimer la catégorie « ${catName(c)} » ?${extra}`)) {
       run(() => deleteDoc(doc(db, "categories", id)), "Catégorie supprimée", "Erreur suppression catégorie");
     }
+  } else if (action === "order-set") {
+    setOrderStatus(id, el.dataset.statut);
+  } else if (action === "loy-add") {
+    loyaltyDraft().push({ points: "", remisePct: "" });
+    state.dirty.loyalty = true;
+    renderLoyaltyPaliers();
+  } else if (action === "loy-del") {
+    loyaltyDraft().splice(Number(el.dataset.idx), 1);
+    state.dirty.loyalty = true;
+    renderLoyaltyPaliers();
   } else if (action === "order-delete") {
     if (confirm("Supprimer définitivement cette commande ?")) {
       run(() => deleteDoc(doc(db, "commandes", id)), "Commande supprimée", "Erreur lors de la suppression");
@@ -613,7 +705,12 @@ document.addEventListener("change", (e) => {
   if (!el || !isAdmin(state.user)) return;
   const { action, id } = el.dataset;
   if (action === "order-status") {
-    run(() => updateDoc(doc(db, "commandes", id), { statut: el.value }), "Statut mis à jour");
+    const o = state.orders.find((x) => x.id === id);
+    if (o && el.value !== statutOf(o)) setOrderStatus(id, el.value);
+    if (o) el.value = statutOf(o); // le temps réel affichera le nouveau statut
+  } else if (action === "loy-palier") {
+    const d = loyaltyDraft()[Number(el.dataset.idx)];
+    if (d) d[el.dataset.field] = el.value;
   } else if (action === "cat-order") {
     run(() => updateDoc(doc(db, "categories", id), { ordre: Number(el.value) || 0 }), "Ordre mis à jour");
   }
@@ -658,7 +755,7 @@ document.addEventListener("submit", (e) => {
     $("cost-valeur").value = "";
     $("cost-note").value = "";
     const p = state.products.find((x) => x.id === id);
-    if (isCurrent && p) offerSellingPrice({ id, nom: p.nom, cout: valeur, prix: p.prix });
+    if (isCurrent && p && valeur > 0) offerSellingPrice({ id, nom: p.nom, cout: valeur, prix: p.prix, target: "db" });
   }, "Prix de revient enregistré", "Erreur lors de l'enregistrement");
 });
 
@@ -809,36 +906,39 @@ function renderCostPanel() {
 
 
 // =============================================================
-// POPUP : prix de vente suggéré (revient + 40 % max, arrondi au 0,50 inférieur)
+// POPUP : prix de vente suggéré (taux, mode et arrondi réglés dans « Paramètres »)
+// target "form" : remplit le champ Prix du formulaire ; target "db" : met à jour la pâtisserie.
 // =============================================================
 let priceProposal = null;
 let focusBeforeModal = null;
 
-function offerSellingPrice({ id, nom, cout, prix }) {
-  const suggere = suggestSellingPrice(cout);
-  if (suggere == null) return; // aucun prix rond possible (revient minuscule)
-  const actuel = Number(prix);
-  if (Math.round(suggere * 100) === Math.round(actuel * 100)) return; // déjà au bon prix : rien à proposer
-  priceProposal = { id, suggere };
+function offerSellingPrice({ id, nom, cout, prix, target = "db" }) {
+  const pricing = state.pricing;
+  const suggere = suggestSellingPrice(cout, pricing);
+  if (suggere == null) return;
+  const actuel = prix == null || prix === "" ? NaN : Number(prix);
+  const hasActuel = Number.isFinite(actuel) && actuel > 0;
+  if (hasActuel && Math.round(suggere * 100) === Math.round(actuel * 100)) return; // déjà au bon prix
+  priceProposal = { id, suggere, target };
 
-  const plafond = cout * (1 + MAX_MARKUP_PCT / 100);
-  const m = marginOf(suggere, cout);
-  const depasse = Math.round(actuel * 100) > Math.floor(plafond * 100 + 1e-6);
-  const maj = (v) => { const x = markupPct(v, cout); return x == null ? "" : ` <span class="text-xs text-[#7F7973]">(${formatPct(x, true)})</span>`; };
+  const exact = targetPrice(cout, pricing);
+  const detail = (v) => {
+    const m = marginOf(v, cout), x = markupPct(v, cout);
+    return m ? ` <span class="block text-[11px] text-[#7F7973]">marge ${formatPct(m.pct)} &bull; ${formatPct(x, true)} sur le revient</span>` : "";
+  };
 
   $("price-modal-body").innerHTML = `
     <div class="space-y-1">
-      <h3 id="price-modal-title" class="font-serif text-2xl">Ajuster le prix de vente ?</h3>
-      <p class="text-sm text-[#7F7973]">Nouveau prix de revient de <strong class="text-[#2C2A29]">« ${esc(nom)} »</strong> : ${formatPrice(cout)}.</p>
+      <h3 id="price-modal-title" class="font-serif text-2xl">${hasActuel ? "Ajuster le prix de vente ?" : "Prix de vente proposé"}</h3>
+      <p class="text-sm text-[#7F7973]">Prix de revient de <strong class="text-[#2C2A29]">« ${esc(nom)} »</strong> : ${formatPrice(cout)}.</p>
     </div>
     <div class="border border-[#2C2A29]/15 bg-white divide-y divide-[#2C2A29]/10 text-sm">
-      <div class="flex items-baseline justify-between gap-3 p-3"><span class="text-[#7F7973]">Prix de vente actuel</span><span>${Number.isFinite(actuel) ? formatPrice(actuel) : "—"}${Number.isFinite(actuel) ? maj(actuel) : ""}</span></div>
-      <div class="flex items-baseline justify-between gap-3 p-3"><span class="font-medium">Prix proposé</span><span class="font-serif text-2xl">${formatPrice(suggere)}${maj(suggere)}</span></div>
+      <div class="flex items-start justify-between gap-3 p-3"><span class="text-[#7F7973]">Prix de vente actuel</span><span class="text-right">${hasActuel ? `${formatPrice(actuel)}${detail(actuel)}` : "—"}</span></div>
+      <div class="flex items-start justify-between gap-3 p-3"><span class="font-medium">Prix proposé</span><span class="text-right"><span class="font-serif text-2xl">${formatPrice(suggere)}</span>${detail(suggere)}</span></div>
     </div>
-    ${depasse ? `<p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-3">Le prix actuel dépasse le plafond de +${MAX_MARKUP_PCT} % par rapport au prix de revient.</p>` : ""}
-    <p class="text-xs text-[#7F7973] leading-relaxed">Règle : prix de revient + ${MAX_MARKUP_PCT} % au maximum (${formatPrice(plafond)}), arrondi au 0,50 € inférieur.${m ? ` Marge : ${formatPrice(m.eur)} (${formatPct(m.pct)} du prix de vente).` : ""}</p>
+    <p class="text-xs text-[#7F7973] leading-relaxed">Règle : ${esc(pricingRuleLabel(pricing))} (${formatPrice(exact)} avant arrondi). Modifiable dans l'onglet « Paramètres ».${target === "form" ? " Le prix sera placé dans le formulaire : pensez à l'enregistrer." : ""}</p>
     <div class="flex flex-col-reverse sm:flex-row gap-3">
-      <button type="button" data-action="price-skip" class="flex-1 px-4 py-3 border border-[#2C2A29] text-xs uppercase tracking-[0.15em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">Garder ${Number.isFinite(actuel) ? formatPrice(actuel) : "le prix"}</button>
+      <button type="button" data-action="price-skip" class="flex-1 px-4 py-3 border border-[#2C2A29] text-xs uppercase tracking-[0.15em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">${hasActuel ? `Garder ${formatPrice(actuel)}` : "Ignorer"}</button>
       <button type="button" id="price-apply-btn" data-action="price-apply" class="flex-1 px-4 py-3 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.15em] hover:bg-[#43403E] transition-colors">Valider ${formatPrice(suggere)}</button>
     </div>`;
 
@@ -857,11 +957,103 @@ function closePriceModal() {
 
 function applySellingPrice() {
   if (!priceProposal) return;
-  const { id, suggere } = priceProposal;
+  const { id, suggere, target } = priceProposal;
   closePriceModal();
+  if (target === "form") {
+    $("prod-prix").value = suggere.toFixed(2);
+    toast(`Prix ${formatPrice(suggere)} placé dans le formulaire`);
+    return;
+  }
   run(() => updateDoc(doc(db, "patisseries", id), { prix: suggere }), `Prix de vente mis à jour : ${formatPrice(suggere)}`, "Erreur lors de la mise à jour du prix");
 }
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("price-modal").classList.contains("hidden")) closePriceModal();
 });
+
+// =============================================================
+// PARAMÈTRES : prix suggéré, programme de fidélité, notifications
+// =============================================================
+const loyaltyDraft = () => (state.loyaltyDraft ??= state.loyalty.paliers.map((p) => ({ ...p })));
+
+function renderPricingExample() {
+  const p = normalizePricing({ tauxPct: $("set-taux").value, mode: $("set-mode").value, arrondi: $("set-arrondi").value });
+  const ex = 14.5;
+  const sug = suggestSellingPrice(ex, p);
+  const m = marginOf(sug, ex);
+  $("pricing-example").innerHTML = `Exemple : revient ${formatPrice(ex)} → ${formatPrice(targetPrice(ex, p))} → proposé <strong>${formatPrice(sug)}</strong>${m ? ` (marge ${formatPct(m.pct)}, ${formatPct(markupPct(sug, ex), true)} sur le revient)` : ""}.`;
+}
+
+function renderLoyaltyPaliers() {
+  $("loy-paliers").innerHTML = loyaltyDraft().map((p, i) => `
+    <div class="flex flex-wrap items-center gap-3 text-sm">
+      <input type="number" min="1" step="1" value="${esc(p.points)}" data-action="loy-palier" data-field="points" data-idx="${i}" aria-label="Points nécessaires" class="inp !w-28" placeholder="100" />
+      <span>points =</span>
+      <input type="number" min="1" max="100" step="0.5" value="${esc(p.remisePct)}" data-action="loy-palier" data-field="remisePct" data-idx="${i}" aria-label="Remise en %" class="inp !w-24" placeholder="10" />
+      <span>% de remise sur la commande</span>
+      <button type="button" data-action="loy-del" data-idx="${i}" class="text-[10px] uppercase tracking-[0.15em] text-red-700 underline">Retirer</button>
+    </div>`).join("") || `<p class="text-xs text-[#7F7973]">Aucune récompense : les clients cumulent des points sans pouvoir les utiliser.</p>`;
+}
+
+function renderSettings() {
+  if (!state.dirty.pricing) {
+    $("set-taux").value = state.pricing.tauxPct;
+    $("set-mode").value = state.pricing.mode;
+    $("set-arrondi").value = String(state.pricing.arrondi);
+    renderPricingExample();
+  }
+  if (!state.dirty.loyalty) {
+    $("loy-actif").checked = state.loyalty.actif;
+    $("loy-description").value = state.loyalty.description;
+    $("loy-validite").value = state.loyalty.validiteJours || "";
+    state.loyaltyDraft = null;
+    renderLoyaltyPaliers();
+  }
+  $("email-status").innerHTML = emailEnabled()
+    ? `Activées : un e-mail est envoyé à <strong>${esc(EMAILJS.destinataire)}</strong> à chaque commande passée et à chaque annulation par un client (EmailJS).`
+    : `<span class="text-amber-800">Non configurées.</span> Renseignez la partie <code>EMAILJS</code> du fichier <code>js/config.js</code> (clé publique, service et modèle) pour recevoir un e-mail à chaque commande passée ou annulée.`;
+}
+
+$("pricing-form").addEventListener("input", () => { state.dirty.pricing = true; renderPricingExample(); });
+$("pricing-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!isAdmin(state.user)) return;
+  const tauxPct = Number($("set-taux").value);
+  const mode = $("set-mode").value;
+  if (!(tauxPct > 0) || (mode === "marge" && tauxPct >= 100)) return toast("Taux invalide (une marge doit rester sous 100 %)");
+  const data = { tauxPct, mode, arrondi: Number($("set-arrondi").value) === 1 ? 1 : 0.5, updatedAt: serverTimestamp() };
+  run(async () => {
+    await setDoc(doc(db, "parametres", "prix"), data);
+    state.dirty.pricing = false;
+  }, "Réglages du prix enregistrés", "Erreur d'enregistrement (règles Firestore déployées ?)");
+});
+
+$("loyalty-form").addEventListener("input", () => { state.dirty.loyalty = true; });
+$("loyalty-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!isAdmin(state.user)) return;
+  // Lecture directe des champs (la valeur saisie compte même si le champ n'a pas encore perdu le focus)
+  const rows = [...$("loy-paliers").querySelectorAll("div")].map((row) => ({
+    points: Math.floor(Number(row.querySelector("[data-field='points']")?.value)),
+    remisePct: Number(row.querySelector("[data-field='remisePct']")?.value)
+  }));
+  if (rows.some((r) => !(r.points > 0) || !(r.remisePct > 0 && r.remisePct <= 100))) {
+    return toast("Récompense incomplète : points > 0 et remise entre 1 et 100 %");
+  }
+  if (new Set(rows.map((r) => r.points)).size !== rows.length) return toast("Deux récompenses ont le même nombre de points");
+  const validite = Math.floor(Number($("loy-validite").value));
+  const data = {
+    actif: $("loy-actif").checked,
+    description: $("loy-description").value.trim(),
+    paliers: rows.sort((a, b) => a.points - b.points),
+    validiteJours: validite > 0 ? validite : 0,
+    updatedAt: serverTimestamp()
+  };
+  run(async () => {
+    await setDoc(doc(db, "parametres", "fidelite"), data);
+    state.dirty.loyalty = false;
+    state.loyaltyDraft = null;
+  }, "Programme de fidélité enregistré", "Erreur d'enregistrement (règles Firestore déployées ?)");
+});
+
+renderSettings();

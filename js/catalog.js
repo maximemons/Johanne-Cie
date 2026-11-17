@@ -9,7 +9,22 @@ export const MOIS = [
 ];
 
 export const STATUTS = ["Disponible", "Épuisé", "Hors-Saison"];
-export const ORDER_STATUTS = ["En attente", "Confirmée", "Prête", "Retirée", "Annulée"];
+// Cycle d'une commande : En attente → Acceptée → En préparation → Prête → Retirée
+// (ou Refusée par l'atelier / Annulée par le client tant qu'elle n'est pas « En préparation »)
+export const ORDER_STATUTS = ["En attente", "Acceptée", "En préparation", "Prête", "Retirée", "Refusée", "Annulée"];
+const CLOSED_STATUTS = ["Retirée", "Refusée", "Annulée"];
+
+/** Compatibilité : les anciennes commandes « Confirmée » sont des commandes acceptées. */
+export function normalizeOrderStatut(s) {
+  if (!s) return "En attente";
+  if (s === "Confirmée") return "Acceptée";
+  return ORDER_STATUTS.includes(s) ? s : "En attente";
+}
+export const isOrderOpen = (o) => !CLOSED_STATUTS.includes(normalizeOrderStatut(o.statut));
+/** Le client peut annuler tant que l'atelier n'a pas lancé la préparation. */
+export const canClientCancel = (o) => ["En attente", "Acceptée"].includes(normalizeOrderStatut(o.statut));
+/** Commande qui compte (points de fidélité, chiffre) : ni refusée ni annulée. */
+export const isOrderVoid = (o) => ["Refusée", "Annulée"].includes(normalizeOrderStatut(o.statut));
 
 const ESC_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ESC_MAP[c]);
@@ -110,6 +125,56 @@ export function getAvailability(product, date = new Date()) {
   return { available: true, reason: null };
 }
 
+/**
+ * Peut-on commander cette création (pour une date à choisir) ?
+ * Seuls « Épuisé » et « Hors-Saison » (retrait manuel) bloquent : une création saisonnière
+ * hors de sa saison reste commandable en avance, pour une date située dans sa saison.
+ */
+export function isOrderable(product) {
+  return normalizeStatut(product.statut) === "Disponible";
+}
+
+/** Précommande : commandable, mais pas en saison aujourd'hui. */
+export function isPreorder(product, date = new Date()) {
+  return isOrderable(product) && !isInSeason(product.saison, date);
+}
+
+const lastDayOfMonth = (y, m0) => new Date(y, m0 + 1, 0);
+
+/**
+ * Période de saison ouverte à la commande, à partir de `fromISO` (par défaut demain) :
+ * { start, end } au format AAAA-MM-JJ (end = null si la création est disponible toute l'année).
+ * C'est l'occurrence de la saison en cours si on y est, sinon la prochaine
+ * (ex. le 10 mai pour une saison « août → août » : du 1er au 31 août).
+ */
+export function seasonWindow(saison, fromISO = tomorrowISO()) {
+  if (!hasSeason(saison)) return { start: fromISO, end: null };
+  const from = parseISODate(fromISO);
+  let y = from.getFullYear(), m = from.getMonth();
+  let guard = 0;
+  while (!isInSeason(saison, new Date(y, m, 1)) && guard++ < 12) {
+    m++; if (m > 11) { m = 0; y++; }
+  }
+  const startDate = guard === 0 ? from : new Date(y, m, 1);
+  // Étend la fenêtre tant que les mois suivants sont en saison (12 mois max = toute l'année)
+  let ey = y, em = m, months = 1;
+  while (months < 12) {
+    let ny = ey, nm = em + 1;
+    if (nm > 11) { nm = 0; ny++; }
+    if (!isInSeason(saison, new Date(ny, nm, 1))) break;
+    ey = ny; em = nm; months++;
+  }
+  if (months >= 12) return { start: fromISO, end: null };
+  return { start: toISODate(startDate), end: toISODate(lastDayOfMonth(ey, em)) };
+}
+
+/** « Précommande dès août » : libellé court pour une création hors de sa saison. */
+export function preorderLabel(product) {
+  const w = seasonWindow(product.saison);
+  const d = parseISODate(w.start);
+  return `Précommande dès ${MOIS[d.getMonth()]}`;
+}
+
 // ---------- Connexion par lien e-mail (sans mot de passe) ----------
 export const EMAIL_LINK_KEY = "johanne_email_for_signin";
 
@@ -155,15 +220,23 @@ export function formatPrixPour(pp) {
 export const BEST_ID = "__best__";
 export const BEST_LABEL = "Best-Sellers";
 
+export const FAV_ID = "__favoris__";
+export const FAV_LABEL = "Favoris";
+
 /**
- * Groupes affichés en boutique : fausse catégorie « Best-Sellers » en première position
- * (uniquement s'il y en a au moins un), puis les vraies catégories.
- * Un best-seller reste aussi dans sa vraie catégorie. Ordre dans la fausse catégorie : celui de la carte.
+ * Groupes affichés en boutique : fausse catégorie « Favoris » en première position (s'il y en a),
+ * puis « Best-Sellers » (s'il y en a), puis les vraies catégories.
+ * Un favori / best-seller reste aussi dans sa vraie catégorie. Ordre dans les fausses catégories : celui de la carte.
  */
-export function shopGroups(categories, products) {
+export function shopGroups(categories, products, favoriteIds = []) {
   const groups = groupByCategory(categories, products);
-  const best = groups.flatMap((g) => g.products).filter((p) => p.bestSeller === true);
-  return best.length
-    ? [{ id: BEST_ID, nom: BEST_LABEL, icon: "★", virtual: true, products: best }, ...groups]
-    : groups;
+  const all = groups.flatMap((g) => g.products);
+  const favSet = new Set(favoriteIds);
+  const favs = all.filter((p) => favSet.has(p.id));
+  const best = all.filter((p) => p.bestSeller === true);
+  return [
+    ...(favs.length ? [{ id: FAV_ID, nom: FAV_LABEL, icon: "♥", virtual: true, products: favs }] : []),
+    ...(best.length ? [{ id: BEST_ID, nom: BEST_LABEL, icon: "★", virtual: true, products: best }] : []),
+    ...groups
+  ];
 }
