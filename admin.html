@@ -292,6 +292,12 @@
     <div id="price-modal-body" class="relative w-full max-w-md bg-[#FDFBF7] border border-[#2C2A29] p-6 sm:p-8 space-y-5 shadow-xl"></div>
   </div>
 
+  <!-- Popup : choix des articles retirés par le client -->
+  <div id="pickup-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="pickup-modal-title">
+    <div data-action="pickup-cancel" class="absolute inset-0 bg-[#2C2A29]/50"></div>
+    <div id="pickup-modal-body" class="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[#FDFBF7] border border-[#2C2A29] p-6 sm:p-8 space-y-5 shadow-xl"></div>
+  </div>
+
   <div id="toast" class="fixed bottom-6 right-6 z-50 bg-[#2C2A29] text-[#FDFBF7] px-5 py-3 text-xs uppercase tracking-[0.18em] shadow-lg translate-y-20 opacity-0 transition-all duration-300 pointer-events-none"></div>
 
   <style>

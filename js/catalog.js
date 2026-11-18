@@ -9,9 +9,10 @@ export const MOIS = [
 ];
 
 export const STATUTS = ["Disponible", "Épuisé", "Hors-Saison"];
-// Cycle d'une commande : En attente → Acceptée → En préparation → Prête → Retirée
+// Cycle d'une commande : En attente → Acceptée → En préparation → Prête → (Retrait partiel →) Retirée
 // (ou Refusée par l'atelier / Annulée par le client tant qu'elle n'est pas « En préparation »)
-export const ORDER_STATUTS = ["En attente", "Acceptée", "En préparation", "Prête", "Retirée", "Refusée", "Annulée"];
+// « Retrait partiel » : une partie seulement des articles a été remise ; la commande reste ouverte.
+export const ORDER_STATUTS = ["En attente", "Acceptée", "En préparation", "Prête", "Retrait partiel", "Retirée", "Refusée", "Annulée"];
 const CLOSED_STATUTS = ["Retirée", "Refusée", "Annulée"];
 
 /** Compatibilité : les anciennes commandes « Confirmée » sont des commandes acceptées. */

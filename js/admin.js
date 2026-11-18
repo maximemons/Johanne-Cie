@@ -223,6 +223,7 @@ const STATUT_STYLE = {
   "Acceptée": "bg-sky-50 text-sky-800 border-sky-200",
   "En préparation": "bg-violet-50 text-violet-800 border-violet-200",
   "Prête": "bg-emerald-50 text-emerald-800 border-emerald-200",
+  "Retrait partiel": "bg-teal-50 text-teal-800 border-teal-200",
   "Retirée": "bg-stone-100 text-stone-600 border-stone-300",
   "Refusée": "bg-red-50 text-red-800 border-red-200",
   "Annulée": "bg-red-50 text-red-800 border-red-200"
@@ -233,14 +234,15 @@ const NEXT_STEPS = {
   "En attente": [["Accepter", "Acceptée", "primary"], ["Refuser", "Refusée", "danger"]],
   "Acceptée": [["En préparation", "En préparation", "primary"], ["Refuser", "Refusée", "danger"]],
   "En préparation": [["Marquer prête", "Prête", "primary"]],
-  "Prête": [["Marquer retirée", "Retirée", "primary"]]
+  "Prête": [["Marquer retirée", "Retirée", "primary"]],
+  "Retrait partiel": [["Marquer retirée", "Retirée", "primary"]]
 };
 const STEP_CLS = {
   primary: "bg-[#2C2A29] text-[#FDFBF7] hover:bg-[#43403E]",
   danger: "border border-red-300 text-red-700 hover:bg-red-700 hover:text-white"
 };
 // Horodatage enregistré à chaque étape
-const STEP_FIELD = { "Acceptée": "accepteeLe", "Refusée": "refuseeLe", "En préparation": "preparationLe", "Prête": "preteLe", "Retirée": "retireeLe", "Annulée": "annuleeLe" };
+const STEP_FIELD = { "Acceptée": "accepteeLe", "Refusée": "refuseeLe", "En préparation": "preparationLe", "Prête": "preteLe", "Retrait partiel": "retraitPartielLe", "Retirée": "retireeLe", "Annulée": "annuleeLe" };
 
 // Chaque article porte sa propre date ; les anciennes commandes n'ont qu'une date globale
 const orderArticles = (o) =>
@@ -248,7 +250,7 @@ const orderArticles = (o) =>
 
 const shortId = (o) => o.id.slice(0, 8).toUpperCase();
 // Retrait partiel : chaque article peut être remis séparément (ex. précommande retirée plus tard)
-const REMISE_STATUTS = ["Acceptée", "En préparation", "Prête", "Retirée"];
+const REMISE_STATUTS = ["Acceptée", "En préparation", "Prête", "Retrait partiel", "Retirée"];
 const remisCount = (o) => (o.articles || []).filter((a) => a.remis).length;
 const round2 = (n) => Math.round(Number(n) * 100) / 100;
 const fmtIso = (iso) => (iso ? new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : "");
@@ -326,8 +328,8 @@ function renderByOrder() {
           </div>
           <div class="text-right space-y-2">
             <span class="font-serif text-xl">${formatPrice(o.total)}</span>
-            <div><span class="inline-block text-[11px] px-2 py-0.5 border ${STATUT_STYLE[statut] || ""}">${esc(statut)}</span></div>
-            ${nRemis && nRemis < nArt ? `<div><span class="inline-block text-[11px] px-2 py-0.5 border bg-emerald-50 text-emerald-800 border-emerald-200">Retrait partiel ${nRemis}/${nArt}</span></div>` : ""}
+            <div><span class="inline-block text-[11px] px-2 py-0.5 border ${STATUT_STYLE[statut] || ""}">${esc(statut)}${statut === "Retrait partiel" ? ` ${nRemis}/${nArt}` : ""}</span></div>
+            ${statut !== "Retrait partiel" && nRemis && nRemis < nArt ? `<div><span class="inline-block text-[11px] px-2 py-0.5 border bg-emerald-50 text-emerald-800 border-emerald-200">Retrait partiel ${nRemis}/${nArt}</span></div>` : ""}
           </div>
         </div>
         <ul class="text-xs space-y-1.5">${lines}</ul>
@@ -362,6 +364,13 @@ function setOrderStatus(id, statut) {
     if (motif === null) return; // abandon
     if (motif.trim()) extra.motifRefus = motif.trim();
   }
+  if (statut === "Retirée" || statut === "Retrait partiel") {
+    // Plusieurs articles encore à remettre : l'atelier choisit lesquels partent aujourd'hui
+    const o = state.orders.find((x) => x.id === id);
+    const restants = (o?.articles || []).filter((a) => !a.remis).length;
+    if ((o?.articles || []).length > 1 && restants > 0) return openPickupModal(id, statut);
+    if (statut === "Retrait partiel") return toast("Retrait partiel impossible : choisissez « Retirée »");
+  }
   if (STEP_FIELD[statut]) extra[STEP_FIELD[statut]] = serverTimestamp();
   if (statut === "Retirée") {
     // Retrait global : les articles pas encore remis le sont maintenant
@@ -375,7 +384,108 @@ function setOrderStatus(id, statut) {
   run(() => updateDoc(doc(db, "commandes", id), { statut, ...extra }), `Commande : ${statut.toLowerCase()}`);
 }
 
-/** Remise (ou annulation de la remise) d'un seul article. Tout remis → commande « Retirée ». */
+// ---------- Retrait : choix des articles remis au client ----------
+let pickup = null; // { id, statut visé, checked: Set des index cochés }
+let focusBeforePickup = null;
+
+/** Ouvre la popup de retrait ; les articles à retirer aujourd'hui sont cochés d'office. */
+function openPickupModal(id, statutVise) {
+  const o = state.orders.find((x) => x.id === id);
+  if (!o) return;
+  const today = todayISO();
+  const checked = new Set();
+  orderArticles(o).forEach((a, i) => { if (!a.remis && a.date === today) checked.add(i); });
+  pickup = { id, statutVise, checked, nbArticles: o.articles.length };
+  focusBeforePickup = document.activeElement;
+  renderPickupModal();
+  $("pickup-modal").classList.remove("hidden");
+  $("pickup-modal-body").querySelector("input[type=checkbox]:not(:disabled)")?.focus();
+}
+
+function renderPickupModal() {
+  const o = state.orders.find((x) => x.id === pickup?.id);
+  if (!o) return closePickupModal();
+  const today = todayISO();
+  const arts = orderArticles(o);
+  const dejaRemis = arts.filter((a) => a.remis).length;
+  const total = dejaRemis + pickup.checked.size;
+  const toutes = total === arts.length;
+  const dateTag = (d) => !d ? "" : d === today ? "Aujourd'hui" : d < today ? "En retard" : "";
+
+  const ligne = (a, i) => {
+    const tag = dateTag(a.date);
+    if (a.remis) {
+      return `
+        <li class="flex items-start gap-3 p-3 opacity-60">
+          <input type="checkbox" checked disabled class="mt-0.5 accent-[#2C2A29]" aria-label="${esc(a.nom)} : déjà retiré" />
+          <span class="flex-1">${a.quantity} &times; ${esc(a.nom)}<span class="block text-[11px] text-[#7F7973]">Déjà retiré${a.remisLe ? ` le ${esc(fmtIso(a.remisLe))}` : ""}</span></span>
+        </li>`;
+    }
+    return `
+      <li>
+        <label class="flex items-start gap-3 p-3 cursor-pointer hover:bg-[#FDFBF7]">
+          <input type="checkbox" data-action="pickup-check" data-idx="${i}" ${pickup.checked.has(i) ? "checked" : ""} class="mt-0.5 accent-[#2C2A29]" />
+          <span class="flex-1">${a.quantity} &times; ${esc(a.nom)}${a.precommande ? ` <span class="text-[10px] uppercase tracking-[0.12em] border border-[#2C2A29]/30 px-1.5 py-0.5 ml-1">Précommande</span>` : ""}
+            <span class="block text-[11px] text-[#7F7973]">Retrait prévu ${esc(formatDateFR(a.date))}</span></span>
+          ${tag ? `<span class="text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 border ${tag === "En retard" ? "bg-red-50 text-red-800 border-red-200" : "bg-[#2C2A29] text-[#FDFBF7] border-[#2C2A29]"}">${tag}</span>` : ""}
+        </label>
+      </li>`;
+  };
+
+  const issue = !pickup.checked.size
+    ? "Cochez au moins un article."
+    : toutes ? "Tous les articles seront retirés : la commande passera « Retirée »."
+    : `${total} article${total > 1 ? "s" : ""} sur ${arts.length} retiré${total > 1 ? "s" : ""} : la commande passera « Retrait partiel ».`;
+
+  $("pickup-modal-body").innerHTML = `
+    <div class="space-y-1">
+      <h3 id="pickup-modal-title" class="font-serif text-2xl">Qu'est-ce qui part aujourd'hui ?</h3>
+      <p class="text-sm text-[#7F7973]">Commande #${esc(shortId(o))} &bull; ${esc(o.userEmail || "Client")}. Les articles prévus aujourd'hui sont cochés.</p>
+    </div>
+    <ul class="border border-[#2C2A29]/15 bg-white divide-y divide-[#2C2A29]/10 text-sm">${arts.map(ligne).join("")}</ul>
+    <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+      <p class="${pickup.checked.size ? "text-[#2C2A29]" : "text-amber-800"}" aria-live="polite">${issue}</p>
+      <button type="button" data-action="pickup-all" class="text-[10px] uppercase tracking-[0.15em] underline">${arts.some((a, i) => !a.remis && !pickup.checked.has(i)) ? "Tout cocher" : "Tout décocher"}</button>
+    </div>
+    <div class="flex flex-col-reverse sm:flex-row gap-3">
+      <button type="button" data-action="pickup-cancel" class="flex-1 px-4 py-3 border border-[#2C2A29] text-xs uppercase tracking-[0.15em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">Annuler</button>
+      <button type="button" data-action="pickup-save" ${pickup.checked.size ? "" : "disabled"} class="flex-1 px-4 py-3 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.15em] hover:bg-[#43403E] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">${toutes ? "Marquer retirée" : "Valider le retrait partiel"}</button>
+    </div>`;
+}
+
+function closePickupModal() {
+  pickup = null;
+  $("pickup-modal").classList.add("hidden");
+  $("pickup-modal-body").innerHTML = "";
+  focusBeforePickup?.focus?.();
+  focusBeforePickup = null;
+}
+
+function savePickup() {
+  const o = state.orders.find((x) => x.id === pickup?.id);
+  if (!o || !pickup.checked.size) return;
+  if ((o.articles || []).length !== pickup.nbArticles) {
+    toast("La commande a changé entre-temps : vérifiez la sélection");
+    return renderPickupModal();
+  }
+  const now = new Date().toISOString();
+  const articles = o.articles.map((a, i) => (pickup.checked.has(i) && !a.remis ? { ...a, remis: true, remisLe: now } : a));
+  const n = articles.filter((a) => a.remis).length;
+  const upd = { articles };
+  let msg;
+  if (n === articles.length) {
+    Object.assign(upd, { statut: "Retirée", retireeLe: serverTimestamp(), retraitPartiel: false });
+    msg = "Commande : retirée";
+  } else {
+    Object.assign(upd, { statut: "Retrait partiel", retraitPartielLe: serverTimestamp(), retraitPartiel: true });
+    msg = `Retrait partiel ${n}/${articles.length}`;
+  }
+  const id = o.id;
+  closePickupModal();
+  run(() => updateDoc(doc(db, "commandes", id), upd), msg);
+}
+
+/** Remise (ou annulation de la remise) d'un seul article. Tout remis → « Retirée », une partie → « Retrait partiel ». */
 function toggleArticleRemis(id, idx) {
   const o = state.orders.find((x) => x.id === id);
   if (!o?.articles?.[idx]) return;
@@ -390,8 +500,13 @@ function toggleArticleRemis(id, idx) {
     upd.statut = "Retirée";
     upd.retireeLe = serverTimestamp();
     msg = "Tout est remis : commande retirée";
-  } else if (statutOf(o) === "Retirée") {
-    upd.statut = "Prête"; // un article n'est finalement pas parti
+  } else if (n > 0) {
+    if (statutOf(o) !== "Retrait partiel") {
+      upd.statut = "Retrait partiel";
+      upd.retraitPartielLe = serverTimestamp();
+    }
+  } else if (["Retrait partiel", "Retirée"].includes(statutOf(o))) {
+    upd.statut = "Prête"; // plus rien n'est parti
   }
   run(() => updateDoc(doc(db, "commandes", id), upd), msg);
 }
@@ -818,6 +933,16 @@ document.addEventListener("click", (e) => {
     }
   } else if (action === "order-set") {
     setOrderStatus(id, el.dataset.statut);
+  } else if (action === "pickup-cancel") {
+    closePickupModal();
+  } else if (action === "pickup-save") {
+    savePickup();
+  } else if (action === "pickup-all" && pickup) {
+    const o = state.orders.find((x) => x.id === pickup.id);
+    const restants = (o?.articles || []).map((a, i) => (a.remis ? -1 : i)).filter((i) => i >= 0);
+    const tout = restants.every((i) => pickup.checked.has(i));
+    pickup.checked = new Set(tout ? [] : restants);
+    renderPickupModal();
   } else if (action === "article-remis") {
     toggleArticleRemis(id, Number(el.dataset.idx));
   } else if (action === "price-edit") {
@@ -853,6 +978,11 @@ document.addEventListener("change", (e) => {
     const o = state.orders.find((x) => x.id === id);
     if (o && el.value !== statutOf(o)) setOrderStatus(id, el.value);
     if (o) el.value = statutOf(o); // le temps réel affichera le nouveau statut
+  } else if (action === "pickup-check" && pickup) {
+    const i = Number(el.dataset.idx);
+    if (el.checked) pickup.checked.add(i); else pickup.checked.delete(i);
+    renderPickupModal();
+    $("pickup-modal-body").querySelector(`[data-action='pickup-check'][data-idx='${i}']`)?.focus();
   } else if (action === "price-remise" && state.priceEdit) {
     const o = state.orders.find((x) => x.id === state.priceEdit.id);
     state.priceEdit.annulerRemise = el.checked;
@@ -1125,6 +1255,7 @@ function applySellingPrice() {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("price-modal").classList.contains("hidden")) closePriceModal();
+  if (e.key === "Escape" && pickup) closePickupModal();
 });
 
 // =============================================================

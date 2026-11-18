@@ -21,6 +21,7 @@ const CLIENT_STATUT = {
   "Acceptée": { label: "Acceptée", cls: "bg-sky-50 text-sky-800 border-sky-200" },
   "En préparation": { label: "En préparation", cls: "bg-violet-50 text-violet-800 border-violet-200" },
   "Prête": { label: "Prête à retirer", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+  "Retrait partiel": { label: "Retirée en partie", cls: "bg-teal-50 text-teal-800 border-teal-200" },
   "Retirée": { label: "Retirée", cls: "bg-stone-100 text-stone-600 border-stone-300" },
   "Refusée": { label: "Refusée par l'atelier", cls: "bg-red-50 text-red-800 border-red-200" },
   "Annulée": { label: "Annulée", cls: "bg-stone-100 text-stone-600 border-stone-300" }
@@ -111,7 +112,7 @@ function renderOrders() {
         <span>${a.quantity} &times; <a href="${productUrl(a.id)}" class="hover:underline underline-offset-4">${esc(a.nom)}</a> <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${partial && a.remis ? ` <span class="text-[10px] uppercase tracking-[0.12em] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 ml-1">Retiré${a.remisLe ? ` le ${esc(new Date(a.remisLe).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }))}` : ""}</span>` : ""}</span>
         <span class="text-[#7F7973]">${esc(formatDateFR(a.dateRetrait || o.dateRetrait))}</span>
       </li>`).join("");
-    const lockedMsg = !canClientCancel(o) && (["En préparation", "Prête"].includes(statut) || partial)
+    const lockedMsg = !canClientCancel(o) && (["En préparation", "Prête", "Retrait partiel"].includes(statut) || partial)
       ? `<p class="text-[11px] text-[#7F7973]">La préparation a commencé : pour toute modification, contactez la maison.</p>` : "";
 
     return `
