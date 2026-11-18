@@ -14,45 +14,28 @@ body {
   border-color: #2C2A29;
 }
 
-/* Une ligne horizontale de cartes par catégorie (cartes de même taille qu'une grille 3 colonnes) */
+/* Cartes d'une catégorie : elles passent à la ligne
+   (3 par ligne sur grand écran, 2 sur tablette, 1 sur mobile).
+   Mobile : chaque carte est centrée. Tablette / ordinateur : alignées à gauche, comme avant. */
 .row-section { position: relative; }
 
-.row-scroller {
+.row-grid {
+  --gap: 2rem;
   display: flex;
-  gap: 2rem;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scroll-behavior: smooth;
-  padding: 0.5rem 0 1rem;
-  margin-top: -0.5rem;
-  scrollbar-width: thin;
-  scrollbar-color: #2C2A29 transparent;
-}
-
-.row-card { flex: 0 0 85%; scroll-snap-align: start; }
-@media (min-width: 640px)  { .row-card { flex-basis: calc((100% - 2rem) / 2); } }
-@media (min-width: 1024px) { .row-card { flex-basis: calc((100% - 4rem) / 3); } }
-
-.row-arrow {
-  display: none;
-  position: absolute;
-  top: 30%;
-  z-index: 5;
-  width: 2.5rem;
-  height: 2.5rem;
-  align-items: center;
+  flex-wrap: wrap;
   justify-content: center;
-  background: #FDFBF7;
-  border: 1px solid #2C2A29;
-  color: #2C2A29;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
+  gap: var(--gap);
 }
-.row-arrow:hover { background: #2C2A29; color: #FDFBF7; }
-.row-arrow[data-on] { display: flex; }
-.row-arrow-prev { left: -0.5rem; }
-.row-arrow-next { right: -0.5rem; }
-@media (max-width: 639px) { .row-arrow { display: none !important; } }
+
+.row-card { box-sizing: border-box; flex: 0 1 100%; max-width: 30rem; min-width: 0; }
+@media (max-width: 723px)  { .row-grid { --gap: 1.5rem; } }
+@media (min-width: 724px)  {
+  .row-grid { justify-content: flex-start; }
+  .row-card { flex-basis: calc((100% - var(--gap)) / 2); max-width: calc((100% - var(--gap)) / 2); }
+}
+@media (min-width: 1024px) {
+  .row-card { flex-basis: calc((100% - 2 * var(--gap)) / 3); max-width: calc((100% - 2 * var(--gap)) / 3); }
+}
 
 /* Favoris : cœur sur les cartes et la fiche produit */
 .fav-btn {

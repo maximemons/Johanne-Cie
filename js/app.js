@@ -7,8 +7,7 @@ import {
 import { getFavorites, toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
 
 const state = {
-  activeCategory: null,   // catégorie en cours (scrollspy)
-  rowPos: {}              // défilement horizontal de chaque ligne de catégorie
+  activeCategory: null    // catégorie en cours (scrollspy)
 };
 
 const siteHeader = document.querySelector("header");
@@ -179,7 +178,7 @@ function productCard(p, catLabel) {
     </article>`;
 }
 
-// Une ligne horizontale par catégorie ("Autre" toujours en dernier), cartes toutes de même taille
+// Un bloc par catégorie ("Autre" toujours en dernier) : cartes de même taille, qui passent à la ligne, centrées
 function renderProducts() {
   if (catalog.products.length === 0) {
     productsGrid.innerHTML = "";
@@ -187,8 +186,6 @@ function renderProducts() {
     return;
   }
   emptyCatalog.classList.add("hidden");
-
-  captureRowPositions(); // un re-rendu temps réel ne doit pas ramener les lignes au début
 
   // Dans la fausse catégorie « Best-Sellers », chaque carte indique sa vraie catégorie
   const realName = new Map(groupByCategory(catalog.categories, catalog.products).flatMap((g) => g.products.map((p) => [p.id, g.nom])));
@@ -200,62 +197,13 @@ function renderProducts() {
       const items = [...g.products].sort((a, b) => rank(a) - rank(b));
       return `
         <section id="cat-${esc(g.id)}" data-cat-section="${esc(g.id)}" class="row-section" aria-label="${esc(g.nom)}">
-          <div class="row-scroller">${items.map((p) => productCard(p, g.virtual ? realName.get(p.id) : g.nom)).join("")}</div>
-          <button type="button" data-row-scroll="-1" class="row-arrow row-arrow-prev" aria-label="Précédent">&lsaquo;</button>
-          <button type="button" data-row-scroll="1" class="row-arrow row-arrow-next" aria-label="Suivant">&rsaquo;</button>
+          <div class="row-grid">${items.map((p) => productCard(p, g.virtual ? realName.get(p.id) : g.nom)).join("")}</div>
         </section>`;
     })
     .join("");
 
-  restoreRowPositions();
-  updateRowArrows();
   updateActiveCategory();
 }
-
-function captureRowPositions() {
-  const pos = {};
-  productsGrid.querySelectorAll("section[data-cat-section]").forEach((sec) => {
-    pos[sec.dataset.catSection] = sec.querySelector(".row-scroller").scrollLeft;
-  });
-  state.rowPos = pos;
-  return pos;
-}
-
-function restoreRowPositions() {
-  productsGrid.querySelectorAll("section[data-cat-section]").forEach((sec) => {
-    const x = state.rowPos[sec.dataset.catSection];
-    if (!x) return;
-    const sc = sec.querySelector(".row-scroller");
-    sc.style.scrollBehavior = "auto"; // instantané, pas d'animation
-    sc.scrollLeft = x;
-    sc.style.scrollBehavior = "";
-  });
-}
-
-// Flèches de défilement : visibles seulement quand la ligne déborde, et seulement dans le sens utile
-function updateRowArrows() {
-  productsGrid.querySelectorAll("section[data-cat-section]").forEach((sec) => {
-    const sc = sec.querySelector(".row-scroller");
-    const canPrev = sc.scrollLeft > 2;
-    const canNext = sc.scrollLeft + sc.clientWidth < sc.scrollWidth - 2;
-    const toggle = (btn, on) => (on ? btn.setAttribute("data-on", "") : btn.removeAttribute("data-on"));
-    toggle(sec.querySelector("[data-row-scroll='-1']"), canPrev);
-    toggle(sec.querySelector("[data-row-scroll='1']"), canNext);
-  });
-}
-
-productsGrid.addEventListener("scroll", updateRowArrows, true);
-window.addEventListener("resize", updateRowArrows);
-
-productsGrid.addEventListener("click", (e) => {
-  const arrow = e.target.closest("button[data-row-scroll]");
-  if (!arrow) return;
-  const sc = arrow.closest("section").querySelector(".row-scroller");
-  const card = sc.querySelector(".row-card");
-  const step = card.offsetWidth + 32; // largeur d'une carte + espace
-  const perPage = Math.max(1, Math.floor((sc.clientWidth + 32) / step));
-  sc.scrollBy({ left: Number(arrow.dataset.rowScroll) * step * perPage, behavior: "smooth" });
-});
 
 productsGrid.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-add-id]");
@@ -286,7 +234,7 @@ onFavoritesChange(() => {
 // Un lien vers une catégorie (index.html#cat-ID, fil d'Ariane de la fiche) fait défiler jusqu'à elle.
 function saveListState() {
   if (!catalog.ready) return;
-  sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify({ y: window.scrollY, rows: captureRowPositions() }));
+  sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify({ y: window.scrollY }));
 }
 window.addEventListener("pagehide", saveListState);
 
@@ -300,12 +248,9 @@ function applyInitialPosition() {
 
   if (wantsRestore && saved) {
     window.scrollTo({ top: saved.y, behavior: "auto" });
-    state.rowPos = saved.rows || {};
-    restoreRowPositions();
   } else if (window.location.hash.startsWith("#cat-")) {
     scrollToCategory(decodeURIComponent(window.location.hash.slice(5)), "auto");
   }
-  updateRowArrows();
   updateActiveCategory(true);
 }
 
