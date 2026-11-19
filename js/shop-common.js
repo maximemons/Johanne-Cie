@@ -1,8 +1,9 @@
 // Éléments communs aux pages boutique (index.html, produit.html, panier.html, compte.html)
 import { db, auth } from "./config.js";
 import { loadCart, persistCart, getCartCount } from "./cart.js";
+import { normalizeShopSettings } from "./catalog.js";
 import { createOrderWatcher, showAlert, orderNumber } from "./web-notify.js";
-import { collection, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+import { collection, doc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 
 export const $ = (id) => document.getElementById(id);
@@ -50,6 +51,28 @@ export function subscribeCatalog(onChange) {
     catalog.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     prodsLoaded = true;
     update();
+  });
+}
+
+/**
+ * Réglages publics de la boutique (parametres/boutique), en temps réel : `cb(reglages)`.
+ * Document absent ou illisible : réglages par défaut. L'écoute redémarre à chaque connexion /
+ * déconnexion (une écoute refusée s'arrête définitivement).
+ */
+export function subscribeShopSettings(cb) {
+  let unsub = null;
+  onAuthStateChanged(auth, () => {
+    unsub?.();
+    unsub = onSnapshot(
+      doc(db, "parametres", "boutique"),
+      (snap) => cb(normalizeShopSettings(snap.data())),
+      (err) => {
+        console.error(
+          "Réglages de la boutique illisibles (parametres/boutique). " +
+          "Vérifiez que les règles sont déployées : firebase deploy --only firestore:rules", err);
+        cb(normalizeShopSettings(null));
+      }
+    );
   });
 }
 

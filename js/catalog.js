@@ -247,3 +247,48 @@ export function shopGroups(categories, products, favoriteIds = []) {
     ...groups
   ];
 }
+
+// ---------- Tags (libres, saisis en admin) ----------
+export const TAG_MAX_LENGTH = 30;
+
+/** Nettoie un tag : espaces superflus retirés, longueur limitée. "" si vide. */
+export function cleanTag(t) {
+  return String(t ?? "").replace(/\s+/g, " ").trim().slice(0, TAG_MAX_LENGTH);
+}
+
+export const tagKey = (t) => cleanTag(t).toLocaleLowerCase("fr");
+
+/** Tags d'une pâtisserie, nettoyés et sans doublon (insensible à la casse). */
+export function productTags(p) {
+  const seen = new Set();
+  return (Array.isArray(p?.tags) ? p.tags : []).map(cleanTag).filter((t) => {
+    const k = tagKey(t);
+    if (!t || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+export const hasTag = (p, tag) => productTags(p).some((t) => tagKey(t) === tagKey(tag));
+
+/** Tous les tags utilisés dans le catalogue, triés (une seule graphie par tag : la plus fréquente). */
+export function allTags(products) {
+  const byKey = new Map(); // clé -> { graphie -> nombre }
+  for (const p of products) {
+    for (const t of productTags(p)) {
+      const k = tagKey(t);
+      const spellings = byKey.get(k) || new Map();
+      spellings.set(t, (spellings.get(t) || 0) + 1);
+      byKey.set(k, spellings);
+    }
+  }
+  return [...byKey.values()]
+    .map((sp) => [...sp.entries()].sort((a, b) => b[1] - a[1])[0][0])
+    .sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+}
+
+// ---------- Réglages publics de la boutique (document Firestore parametres/boutique) ----------
+export const DEFAULT_SHOP_SETTINGS = { filtreTags: true };
+export function normalizeShopSettings(d) {
+  return { filtreTags: d?.filtreTags !== false };
+}

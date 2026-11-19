@@ -3,7 +3,7 @@ import {
   ADMIN_EMAIL, EMAIL_LINK_KEY, ALLERGENES, BEST_ID, AUTRE_ID, AUTRE_LABEL, MOIS, ORDER_STATUTS,
   esc, formatPrice, formatDateFR, todayISO, tomorrowISO, catName, isCategoryActive,
   groupByCategory, normalizeStatut, hasSeason, seasonLabel, isInSeason, formatPrixPour,
-  normalizeOrderStatut, isOrderOpen
+  normalizeOrderStatut, isOrderOpen, normalizeShopSettings, cleanTag, tagKey, productTags, allTags
 } from "./catalog.js";
 import {
   currentCost, sortHistory, upsertEntry, removeEntry, marginOf, lastChange, pctChange,
@@ -36,7 +36,8 @@ const state = {
   pricing: { ...DEFAULT_PRICING },            // réglages du prix suggéré (parametres/prix, privé)
   loyalty: normalizeLoyalty(DEFAULT_LOYALTY), // programme de fidélité (parametres/fidelite, public)
   loyaltyDraft: null,                         // paliers en cours d'édition
-  dirty: { pricing: false, loyalty: false },  // un formulaire en cours d'édition n'est pas écrasé par le temps réel
+  shop: normalizeShopSettings(null),          // réglages de la boutique (parametres/boutique, public)
+  dirty: { pricing: false, loyalty: false, shop: false },  // un formulaire en cours d'édition n'est pas écrasé par le temps réel
   priceEdit: null                             // ajustement de prix en cours : { id, total, motif, annulerRemise }
 };
 let unsubscribers = [];
@@ -130,7 +131,7 @@ function startListeners() {
   };
   unsubscribers.push(
     onSnapshot(collection(db, "categories"), handle("categories", () => { renderCategories(); renderProductForm(); renderProducts(); renderCosts(); })),
-    onSnapshot(collection(db, "patisseries"), handle("products", () => { renderCategories(); renderProducts(); renderCosts(); })),
+    onSnapshot(collection(db, "patisseries"), handle("products", () => { renderCategories(); renderProducts(); renderCosts(); renderFormTags(); })),
     onSnapshot(
       collection(db, "couts"),
       (snap) => {
@@ -162,7 +163,11 @@ function startListeners() {
     onSnapshot(doc(db, "parametres", "fidelite"), (snap) => {
       state.loyalty = normalizeLoyalty(snap.exists() ? snap.data() : DEFAULT_LOYALTY);
       renderSettings();
-    }, (err) => console.warn("Paramètres de fidélité :", err))
+    }, (err) => console.warn("Paramètres de fidélité :", err)),
+    onSnapshot(doc(db, "parametres", "boutique"), (snap) => {
+      state.shop = normalizeShopSettings(snap.data());
+      renderSettings();
+    }, (err) => console.warn("Paramètres de la boutique :", err))
   );
 }
 
@@ -606,6 +611,68 @@ $("prod-allergenes").innerHTML = ALLERGENES
   .map((a) => `<label class="flex items-center gap-2"><input type="checkbox" value="${esc(a)}" class="prod-allergene accent-[#2C2A29]" /> ${esc(a)}</label>`)
   .join("");
 const checkedAllergenes = () => [...document.querySelectorAll(".prod-allergene:checked")].map((c) => c.value);
+// ---------- Tags du formulaire ----------
+let formTags = [];
+
+function addFormTags(raw) {
+  const known = allTags(state.products);
+  for (const part of String(raw).split(",")) {
+    const t = cleanTag(part);
+    if (!t || formTags.some((x) => tagKey(x) === tagKey(t))) continue;
+    // reprend la graphie déjà utilisée dans le catalogue (« Chocolat » plutôt que « chocolat »)
+    formTags.push(known.find((k) => tagKey(k) === tagKey(t)) || t);
+  }
+  renderFormTags();
+}
+
+function renderFormTags() {
+  $("prod-tags").innerHTML = formTags.map((t, i) => `
+    <span class="inline-flex items-center gap-1 pl-2.5 pr-1 py-0.5 border border-[#2C2A29]/30 bg-white text-xs">
+      ${esc(t)}
+      <button type="button" data-remove-tag="${i}" aria-label="Retirer le tag ${esc(t)}" class="w-5 h-5 leading-none text-[#7F7973] hover:text-[#2C2A29]">&times;</button>
+    </span>`).join("");
+  const unused = allTags(state.products).filter((t) => !formTags.some((x) => tagKey(x) === tagKey(t)));
+  $("prod-tag-suggestions").innerHTML = unused.map((t) => `<option value="${esc(t)}"></option>`).join("");
+  const existing = $("prod-tag-existing");
+  existing.classList.toggle("hidden", !unused.length);
+  existing.innerHTML = unused.length
+    ? `<span class="text-[#7F7973] mr-1">Déjà utilisés :</span>` + unused.map((t) =>
+        `<button type="button" data-add-tag="${esc(t)}" class="px-2 py-0.5 border border-dashed border-[#2C2A29]/30 text-[#2C2A29] hover:border-[#2C2A29]">+ ${esc(t)}</button>`).join("")
+    : "";
+}
+
+const tagInput = $("prod-tag-input");
+tagInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === ",") {
+    e.preventDefault(); // Entrée n'envoie pas le formulaire
+    addFormTags(tagInput.value);
+    tagInput.value = "";
+  } else if (e.key === "Backspace" && !tagInput.value && formTags.length) {
+    formTags.pop();
+    renderFormTags();
+  }
+});
+// Choix dans la liste de suggestions, ou collage de « a, b, c »
+tagInput.addEventListener("input", () => {
+  const v = tagInput.value;
+  if (v.includes(",") || allTags(state.products).some((t) => t === v)) {
+    addFormTags(v);
+    tagInput.value = "";
+  }
+});
+tagInput.addEventListener("blur", () => { if (tagInput.value.trim()) { addFormTags(tagInput.value); tagInput.value = ""; } });
+$("prod-tags").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-remove-tag]");
+  if (!b) return;
+  formTags.splice(Number(b.dataset.removeTag), 1);
+  renderFormTags();
+  tagInput.focus();
+});
+$("prod-tag-existing").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-add-tag]");
+  if (b) addFormTags(b.dataset.addTag);
+});
+
 const parseUrlLines = (txt) => [...new Set(txt.split(/\s*\n\s*/).map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u)))];
 
 $("prod-saison-debut").innerHTML = monthOptions(1);
@@ -632,6 +699,7 @@ function renderProductForm() {
     groupByCategory(state.categories, [], { includeEmpty: true })
       .map((g) => `<option value="${esc(g.id)}">${esc(g.nom)}</option>`).join("");
   f.value = fcur;
+  renderFormTags();
 }
 
 // Proposition de prix dès la saisie du prix de revient (création ou modification) :
@@ -658,6 +726,8 @@ $("prod-revient").addEventListener("change", () => {
 function resetProductForm() {
   formOfferedCost = null;
   productForm.reset();
+  formTags = [];
+  renderFormTags();
   $("prod-edit-id").value = "";
   $("prod-saison-range").classList.add("hidden");
   $("product-form-title").textContent = "Ajouter une pâtisserie";
@@ -691,7 +761,8 @@ productForm.addEventListener("submit", (e) => {
     composition: $("prod-composition").value.trim(),
     parts: $("prod-parts").value.trim(),
     poids: $("prod-poids").value.trim(),
-    allergenes: checkedAllergenes()
+    allergenes: checkedAllergenes(),
+    tags: (addFormTags(tagInput.value), tagInput.value = "", [...formTags])
   };
   const revientRaw = $("prod-revient").value.trim();
   const revient = revientRaw === "" ? null : Number(revientRaw);
@@ -731,7 +802,9 @@ function renderProducts() {
   const items = (state.prodCat === BEST_ID
     ? groups.flatMap((g) => g.products).filter((p) => p.bestSeller === true)
     : groups.filter((g) => state.prodCat === "ALL" || g.id === state.prodCat).flatMap((g) => g.products))
-    .filter((p) => !state.prodSearch || String(p.nom || "").toLowerCase().includes(state.prodSearch));
+    .filter((p) => !state.prodSearch
+      || String(p.nom || "").toLowerCase().includes(state.prodSearch)
+      || productTags(p).some((t) => tagKey(t).includes(state.prodSearch)));
 
   if (!items.length) {
     box.innerHTML = `<p class="text-xs text-[#7F7973] md:col-span-2">Aucun résultat.</p>`;
@@ -771,6 +844,7 @@ function renderProducts() {
               return c == null ? "" : `<p class="text-[11px] text-[#7F7973]">Revient ${formatPrice(c)}${m ? ` &bull; marge ${formatPct(m.pct)}` : ""}</p>`;
             })()}
             ${season ? `<p class="text-[11px] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
+            ${productTags(p).length ? `<p class="flex flex-wrap gap-1 pt-0.5">${productTags(p).map((t) => `<span class="px-1.5 py-px border border-[#2C2A29]/20 text-[10px] text-[#2C2A29]">${esc(t)}</span>`).join("")}</p>` : ""}
             ${autoOff ? `<p class="text-[11px] text-amber-800">Actuellement hors-saison : non commandable</p>` : ""}
           </div>
           <div class="flex flex-wrap gap-2">
@@ -802,6 +876,9 @@ function editProduct(p) {
   $("prod-parts").value = p.parts || "";
   $("prod-poids").value = p.poids || "";
   document.querySelectorAll(".prod-allergene").forEach((c) => { c.checked = (p.allergenes || []).includes(c.value); });
+  formTags = productTags(p);
+  tagInput.value = "";
+  renderFormTags();
   const seasonal = hasSeason(p.saison);
   $("prod-saison-mode").value = seasonal ? "periode" : "toujours";
   $("prod-saison-range").classList.toggle("hidden", !seasonal);
@@ -1296,6 +1373,7 @@ function renderSettings() {
     state.loyaltyDraft = null;
     renderLoyaltyPaliers();
   }
+  if (!state.dirty.shop) $("shop-filtre-tags").checked = state.shop.filtreTags;
 }
 
 $("pricing-form").addEventListener("input", () => { state.dirty.pricing = true; renderPricingExample(); });
@@ -1338,6 +1416,17 @@ $("loyalty-form").addEventListener("submit", (e) => {
     state.dirty.loyalty = false;
     state.loyaltyDraft = null;
   }, "Programme de fidélité enregistré", "Erreur d'enregistrement (règles Firestore déployées ?)");
+});
+
+$("shop-form").addEventListener("input", () => { state.dirty.shop = true; });
+$("shop-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!isAdmin(state.user)) return;
+  const data = { filtreTags: $("shop-filtre-tags").checked, updatedAt: serverTimestamp() };
+  run(async () => {
+    await setDoc(doc(db, "parametres", "boutique"), data);
+    state.dirty.shop = false;
+  }, data.filtreTags ? "Filtre par tag affiché" : "Filtre par tag masqué", "Erreur d'enregistrement (règles Firestore déployées ?)");
 });
 
 renderSettings();

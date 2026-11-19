@@ -142,6 +142,17 @@
               <label class="lbl" for="prod-desc">Description courte</label>
               <textarea id="prod-desc" rows="2" placeholder="Affichée sur la carte et en haut de la fiche..." class="inp"></textarea>
             </div>
+            <div class="sm:col-span-2">
+              <label class="lbl" for="prod-tag-input">Tags</label>
+              <div class="inp flex flex-wrap items-center gap-2 !py-2 focus-within:border-[#2C2A29]">
+                <div id="prod-tags" class="contents"></div>
+                <input type="text" id="prod-tag-input" list="prod-tag-suggestions" maxlength="30" autocomplete="off"
+                  placeholder="Ex : chocolat, sans gluten" class="flex-1 min-w-[10rem] bg-transparent focus:outline-none text-sm py-0.5" />
+                <datalist id="prod-tag-suggestions"></datalist>
+              </div>
+              <p class="text-xs text-[#7F7973] mt-1">Entrée ou virgule pour ajouter un tag. Affichés sur les cartes ; les clients peuvent filtrer la carte par tag (réglable dans Paramètres).</p>
+              <div id="prod-tag-existing" class="hidden mt-2 flex flex-wrap items-center gap-1.5 text-xs"></div>
+            </div>
 
             <fieldset class="sm:col-span-2 border border-[#2C2A29]/15 p-4 space-y-4 bg-[#FDFBF7]">
               <legend class="px-2 text-[11px] uppercase tracking-[0.18em]">Fiche produit (détails)</legend>
@@ -173,7 +184,7 @@
           <div class="flex flex-wrap items-end justify-between gap-4">
             <h3 class="font-serif text-2xl">Catalogue actuel <span id="best-count" class="font-sans text-xs text-[#7F7973] ml-2"></span></h3>
             <div class="flex flex-wrap gap-3">
-              <input type="search" id="prod-search" placeholder="Rechercher..." class="px-3 py-2 text-xs border border-[#2C2A29]/30 bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]" />
+              <input type="search" id="prod-search" placeholder="Rechercher (nom ou tag)..." class="px-3 py-2 text-xs border border-[#2C2A29]/30 bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]" />
               <select id="prod-filter-cat" class="px-3 py-2 text-xs border border-[#2C2A29]/30 bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]"></select>
             </div>
           </div>
@@ -273,6 +284,15 @@
             </div>
             <p class="text-xs text-[#7F7973] pb-2">0 ou vide : les points n'expirent jamais. Ex. 30 : chaque point disparaît 30 jours après la commande qui l'a rapporté.</p>
           </div>
+          <button type="submit" class="px-6 py-3 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.2em] hover:bg-[#43403E] transition-colors">Enregistrer</button>
+        </form>
+
+        <form id="shop-form" class="bg-white border border-[#2C2A29]/15 p-6 sm:p-8 space-y-5 max-w-3xl">
+          <div>
+            <h3 class="font-serif text-xl">Boutique</h3>
+            <p class="text-xs text-[#7F7973] mt-1 leading-relaxed">Les tags restent affichés sur les cartes dans tous les cas. Sans le filtre, ils ne sont plus cliquables.</p>
+          </div>
+          <label class="flex items-center gap-3 text-sm"><input type="checkbox" id="shop-filtre-tags" class="w-4 h-4 accent-[#2C2A29]" /> Afficher la liste « Filtrer par tag » sous les catégories</label>
           <button type="submit" class="px-6 py-3 bg-[#2C2A29] text-[#FDFBF7] text-xs uppercase tracking-[0.2em] hover:bg-[#43403E] transition-colors">Enregistrer</button>
         </form>
 

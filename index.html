@@ -40,8 +40,20 @@
   <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-10">
 
     <section id="view-patisseries" class="space-y-8">
-      <div id="categories-bar" class="sticky z-30 bg-[#FDFBF7] border-b border-[#2C2A29]/15 py-3 overflow-x-auto" style="top:0">
-        <span class="text-xs uppercase tracking-[0.2em] text-[#7F7973]">Chargement de la carte...</span>
+      <div id="categories-bar" class="sticky z-30 bg-[#FDFBF7] border-b border-[#2C2A29]/15 py-3 space-y-3" style="top:0">
+        <div id="categories-list" class="overflow-x-auto">
+          <span class="text-xs uppercase tracking-[0.2em] text-[#7F7973]">Chargement de la carte...</span>
+        </div>
+        <div id="tag-filter-row" class="hidden flex flex-wrap items-center px-1 justify-center gap-3">
+          <label for="tag-filter" class="text-[11px] uppercase tracking-[0.2em] text-[#7F7973]">Filtrer par tag</label>
+          <select id="tag-filter" class="tag-select"></select>
+          <button type="button" id="tag-filter-clear" class="hidden text-[11px] uppercase tracking-[0.18em] underline underline-offset-4 text-[#7F7973] hover:text-[#2C2A29]">Effacer</button>
+        </div>
+      </div>
+
+      <div id="tag-empty" class="hidden text-center py-16 border border-[#2C2A29]/15 bg-white/50 px-6">
+        <p class="font-serif text-2xl text-[#2C2A29] mb-3">Aucune pâtisserie avec ce tag pour le moment</p>
+        <button type="button" data-clear-tag class="text-xs uppercase tracking-[0.18em] underline underline-offset-4">Voir toute la carte</button>
       </div>
 
       <div id="products-grid" class="space-y-12"></div>

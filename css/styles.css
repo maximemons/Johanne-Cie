@@ -63,3 +63,34 @@ body {
 .flash { border: 1px solid; padding: 1rem 1.25rem; font-size: 0.8125rem; line-height: 1.6; }
 .flash-info { background: #F4F0E8; border-color: rgba(44, 42, 41, 0.25); }
 .flash-warn { background: #FFFBEB; border-color: #FCD34D; color: #78350F; }
+
+/* Tags : pastilles sur les cartes et filtre de la boutique */
+.tag-chip {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid rgba(44, 42, 41, 0.22);
+  font-size: 11px;
+  line-height: 1.5;
+  color: #2C2A29;
+  background: #FDFBF7;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+button.tag-chip { cursor: pointer; }
+button.tag-chip:hover { border-color: #2C2A29; }
+.tag-chip.is-on { background: #2C2A29; border-color: #2C2A29; color: #FDFBF7; }
+.tag-chip:focus-visible, .tag-select:focus-visible { outline: 2px solid #2C2A29; outline-offset: 2px; }
+
+.tag-select {
+  min-width: 12rem;
+  max-width: 60vw;
+  padding: 0.45rem 2rem 0.45rem 0.75rem;
+  font-size: 0.8125rem;
+  color: #2C2A29;
+  background: #FDFBF7 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%232C2A29' stroke-width='1.3'/%3E%3C/svg%3E") no-repeat right 0.75rem center / 0.65rem;
+  border: 1px solid rgba(44, 42, 41, 0.3);
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 0;
+}
+.tag-select:hover { border-color: #2C2A29; }
+.tag-select.is-on { border-color: #2C2A29; }

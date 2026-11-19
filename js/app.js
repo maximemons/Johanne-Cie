@@ -1,17 +1,25 @@
-import { $, showToast, saveCart, catalog, subscribeCatalog, LIST_STATE_KEY, RESTORE_FLAG } from "./shop-common.js";
+import { $, showToast, saveCart, catalog, subscribeCatalog, subscribeShopSettings, LIST_STATE_KEY, RESTORE_FLAG } from "./shop-common.js";
 import { loadCart, addItem } from "./cart.js";
 import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
-  productUrl, formatParts, formatPrixPour, shopGroups, isOrderable, isPreorder, preorderLabel
+  productUrl, formatParts, formatPrixPour, shopGroups, isOrderable, isPreorder, preorderLabel,
+  productTags, allTags, hasTag, tagKey
 } from "./catalog.js";
 import { getFavorites, toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
 
 const state = {
-  activeCategory: null    // catégorie en cours (scrollspy)
+  activeCategory: null,   // catégorie en cours (scrollspy)
+  tag: "",                // tag choisi dans le filtre ("" = toute la carte)
+  tagFilterOn: true       // liste « Filtrer par tag » affichée (réglage admin, parametres/boutique)
 };
 
 const siteHeader = document.querySelector("header");
 const categoriesBar = $("categories-bar");
+const categoriesList = $("categories-list");
+const tagRow = $("tag-filter-row");
+const tagSelect = $("tag-filter");
+const tagClear = $("tag-filter-clear");
+const tagEmpty = $("tag-empty");
 const productsGrid = $("products-grid");
 const emptyCatalog = $("empty-catalog");
 
@@ -37,18 +45,53 @@ new ResizeObserver(syncStickyOffsets).observe(siteHeader);
 
 const stickyOffset = () => siteHeader.offsetHeight + categoriesBar.offsetHeight;
 
+// ---------- Filtre par tag ----------
+/** Pâtisseries affichées : toutes, ou celles qui portent le tag choisi. */
+const visibleProducts = () => (state.tag ? catalog.products.filter((p) => hasTag(p, state.tag)) : catalog.products);
+const visibleGroups = () => shopGroups(catalog.categories, visibleProducts(), getFavorites());
+
+function renderTagFilter() {
+  const tags = state.tagFilterOn ? allTags(catalog.products) : [];
+  // filtre désactivé par l'atelier, ou tag retiré par l'atelier entre-temps : on revient à toute la carte
+  if (state.tag && !tags.some((t) => tagKey(t) === tagKey(state.tag))) state.tag = "";
+  else if (state.tag) state.tag = tags.find((t) => tagKey(t) === tagKey(state.tag));
+
+  tagRow.classList.toggle("hidden", tags.length === 0);
+  tagSelect.innerHTML = `<option value=""></option>` +
+    tags.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+  tagSelect.value = state.tag;
+  tagSelect.classList.toggle("is-on", Boolean(state.tag));
+  tagClear.classList.toggle("hidden", !state.tag);
+}
+
+function setTag(tag) {
+  state.tag = tag || "";
+  renderTagFilter();
+  renderCategories();
+  renderProducts();
+  // on repart du haut de la carte filtrée
+  const top = categoriesBar.getBoundingClientRect().top + window.scrollY - siteHeader.offsetHeight;
+  if (window.scrollY > top) window.scrollTo({ top: Math.max(0, top), behavior: "auto" });
+  updateActiveCategory(true);
+}
+
+tagSelect.addEventListener("change", () => setTag(tagSelect.value));
+tagClear.addEventListener("click", () => setTag(""));
+tagEmpty.addEventListener("click", (e) => { if (e.target.closest("[data-clear-tag]")) setTag(""); });
+
 function renderCategories() {
-  const groups = shopGroups(catalog.categories, catalog.products, getFavorites());
+  const groups = visibleGroups();
 
   if (catalog.products.length === 0) {
-    categoriesBar.innerHTML = "";
+    categoriesList.innerHTML = "";
     categoriesBar.classList.add("hidden");
     return;
   }
   if (!groups.some((g) => g.id === state.activeCategory)) state.activeCategory = groups[0]?.id ?? null;
 
   categoriesBar.classList.remove("hidden");
-  categoriesBar.innerHTML = `<div class="flex gap-2 sm:gap-3 mx-auto w-max">${groups
+  categoriesList.classList.toggle("hidden", groups.length === 0);
+  categoriesList.innerHTML = `<div class="flex gap-2 sm:gap-3 mx-auto w-max">${groups
     .map((g) => `<button type="button" data-cat-id="${esc(g.id)}" class="${CAT_BTN_BASE} ${g.id === state.activeCategory ? CAT_BTN_ON : CAT_BTN_OFF}">${g.icon ? `${g.icon} ` : ""}${esc(g.nom)}</button>`)
     .join("")}</div>`;
   syncStickyOffsets();
@@ -80,12 +123,12 @@ function scrollToCategory(id, behavior = "smooth") {
 function setActiveCategory(id) {
   if (state.activeCategory === id) return;
   state.activeCategory = id;
-  categoriesBar.querySelectorAll("button[data-cat-id]").forEach((btn) => {
+  categoriesList.querySelectorAll("button[data-cat-id]").forEach((btn) => {
     const on = btn.dataset.catId === id;
     btn.className = `${CAT_BTN_BASE} ${on ? CAT_BTN_ON : CAT_BTN_OFF}`;
     if (on) {
       // garde le bouton actif visible dans la barre (mobile)
-      categoriesBar.scrollTo({ left: btn.offsetLeft - (categoriesBar.clientWidth - btn.clientWidth) / 2, behavior: "smooth" });
+      categoriesList.scrollTo({ left: btn.offsetLeft - (categoriesList.clientWidth - btn.clientWidth) / 2, behavior: "smooth" });
     }
   });
 }
@@ -124,7 +167,7 @@ window.addEventListener("scroll", () => {
 
 window.addEventListener("resize", () => updateActiveCategory(true));
 
-categoriesBar.addEventListener("click", (e) => {
+categoriesList.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-cat-id]");
   if (btn) scrollToCategory(btn.dataset.catId);
 });
@@ -136,6 +179,7 @@ function productCard(p, catLabel) {
   const season = seasonLabel(p.saison);
   const parts = formatParts(p.parts);
   const pour = formatPrixPour(p.prixPour);
+  const tags = productTags(p);
   const img = p.imageUrl
     ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${blocked ? "grayscale opacity-75" : ""}" loading="lazy" />`
     : `<img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-full object-contain p-6 bg-[#FDFBF7] opacity-80" />`;
@@ -170,6 +214,11 @@ function productCard(p, catLabel) {
             </div>
           </div>
           ${season ? `<p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
+          ${tags.length ? `<ul class="flex flex-wrap gap-1.5 pt-1" aria-label="Tags">${tags.map((t) => {
+            if (!state.tagFilterOn) return `<li><span class="tag-chip">${esc(t)}</span></li>`;
+            const on = state.tag && tagKey(t) === tagKey(state.tag);
+            return `<li><button type="button" data-tag="${esc(t)}" aria-pressed="${on ? "true" : "false"}" title="${on ? "Voir toute la carte" : `Voir les pâtisseries « ${esc(t)} »`}" class="tag-chip${on ? " is-on" : ""}">${esc(t)}</button></li>`;
+          }).join("")}</ul>` : ""}
           ${p.description ? `<p class="text-xs text-[#7F7973] leading-relaxed pt-1">${esc(p.description)}</p>` : ""}
           <a href="${productUrl(p.id)}" class="inline-block pt-1 text-[10px] uppercase tracking-[0.2em] text-[#2C2A29] underline underline-offset-4">Voir le détail &rarr;</a>
         </div>
@@ -186,11 +235,13 @@ function renderProducts() {
     return;
   }
   emptyCatalog.classList.add("hidden");
+  const groups = visibleGroups();
+  tagEmpty.classList.toggle("hidden", groups.length > 0);
 
   // Dans la fausse catégorie « Best-Sellers », chaque carte indique sa vraie catégorie
   const realName = new Map(groupByCategory(catalog.categories, catalog.products).flatMap((g) => g.products.map((p) => [p.id, g.nom])));
 
-  productsGrid.innerHTML = shopGroups(catalog.categories, catalog.products, getFavorites())
+  productsGrid.innerHTML = groups
     .map((g) => {
       // au sein d'une catégorie : disponibles, puis précommandes, puis indisponibles
       const rank = (p) => (getAvailability(p).available ? 0 : isOrderable(p) ? 1 : 2);
@@ -208,7 +259,9 @@ function renderProducts() {
 productsGrid.addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-add-id]");
   const fav = e.target.closest("button[data-fav-id]");
-  if (btn) addToCart(btn.dataset.addId);
+  const tag = e.target.closest("button[data-tag]");
+  if (tag) setTag(tagKey(tag.dataset.tag) === tagKey(state.tag) ? "" : tag.dataset.tag);
+  else if (btn) addToCart(btn.dataset.addId);
   else if (fav) showToast(toggleFavorite(fav.dataset.favId) ? "Ajouté aux favoris" : "Retiré des favoris");
 });
 
@@ -234,7 +287,7 @@ onFavoritesChange(() => {
 // Un lien vers une catégorie (index.html#cat-ID, fil d'Ariane de la fiche) fait défiler jusqu'à elle.
 function saveListState() {
   if (!catalog.ready) return;
-  sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify({ y: window.scrollY }));
+  sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify({ y: window.scrollY, tag: state.tag }));
 }
 window.addEventListener("pagehide", saveListState);
 
@@ -247,6 +300,12 @@ function applyInitialPosition() {
   try { saved = JSON.parse(sessionStorage.getItem(LIST_STATE_KEY) || "null"); } catch { /* ignoré */ }
 
   if (wantsRestore && saved) {
+    if (state.tagFilterOn && saved.tag && saved.tag !== state.tag) {
+      state.tag = saved.tag;
+      renderTagFilter();
+      renderCategories();
+      renderProducts();
+    }
     window.scrollTo({ top: saved.y, behavior: "auto" });
   } else if (window.location.hash.startsWith("#cat-")) {
     scrollToCategory(decodeURIComponent(window.location.hash.slice(5)), "auto");
@@ -255,8 +314,18 @@ function applyInitialPosition() {
 }
 
 // ---------- Firestore (temps réel) ----------
+subscribeShopSettings((reglages) => {
+  if (state.tagFilterOn === reglages.filtreTags) return;
+  state.tagFilterOn = reglages.filtreTags;
+  if (!catalog.ready) return;
+  renderTagFilter();
+  renderCategories();
+  renderProducts();
+});
+
 let positioned = false;
 subscribeCatalog(() => {
+  renderTagFilter();
   renderCategories();
   renderProducts();
   if (catalog.ready && !positioned) {
