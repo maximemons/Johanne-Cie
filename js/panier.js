@@ -3,7 +3,7 @@ import { $, showToast, saveCart, catalog, subscribeCatalog } from "./shop-common
 import { loadCart, getCartTotal, setItemDate, applyFirstDateToAll, removeItem } from "./cart.js";
 import {
   ADMIN_EMAIL, esc, formatPrice, formatDateFR, tomorrowISO, parseISODate,
-  getAvailability, seasonLabel, productUrl, isOrderable, isPreorder, seasonWindow
+  getAvailability, seasonLabel, productUrl, isOrderable, isPreorder, seasonWindow, formatParts, isPieces
 } from "./catalog.js";
 import { mountAuthGate, watchUser, logout } from "./auth-ui.js";
 import { subscribeMyOrders, subscribeLoyaltySettings, takeFlash } from "./client-orders.js";
@@ -138,10 +138,12 @@ function renderCart() {
     .map((item) => {
       const live = liveOf(item);
       const pre = live && isPreorder(live);
+      const parts = live ? formatParts(live.parts, isPieces(live)) : "";
       return `
       <div class="flex items-center justify-between gap-4 p-4 border border-[#2C2A29]/15 bg-white">
         <div class="min-w-0 flex-1">
           <h3 class="font-serif text-xl text-[#2C2A29] truncate"><a href="${productUrl(item.id)}" class="hover:underline underline-offset-4">${esc(item.nom)}</a></h3>
+          ${parts ? `<p class="text-[10px] uppercase tracking-[0.22em] text-[#2C2A29] mt-0.5">${esc(parts)}</p>` : ""}
           <p class="text-xs text-[#7F7973] mt-0.5">${formatPrice(item.prix)} / pièce${pre ? ` &bull; <span class="text-[#2C2A29]">précommande</span>` : ""}</p>
         </div>
         <div class="flex items-center border border-[#2C2A29]/25">

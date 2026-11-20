@@ -203,12 +203,19 @@ export function productImages(p) {
 
 export const productUrl = (id) => `produit.html?id=${encodeURIComponent(id)}`;
 
-/** "4" -> "4 parts" ; "1" -> "1 part" ; un texte libre ("6 à 8 parts") est conservé tel quel. */
-export function formatParts(v) {
+/** Le produit se compte-t-il en pièces (et non en parts / personnes) ? */
+export const isPieces = (p) => (p?.prixPour?.unite || p?.unite) === "pieces";
+
+/**
+ * "4" -> "4 parts" ; "1" -> "1 part" ; un texte libre ("6 à 8 parts") est conservé tel quel.
+ * Produit vendu à la pièce : "12" -> "12 pièces", et "part(s)" devient "pièce(s)" dans un texte libre.
+ */
+export function formatParts(v, pieces = false) {
   const t = String(v ?? "").trim();
   if (!t) return "";
-  if (/^\d+$/.test(t)) return `${t} part${Number(t) > 1 ? "s" : ""}`;
-  return t;
+  const [singulier, pluriel] = pieces ? ["pièce", "pièces"] : ["part", "parts"];
+  if (/^\d+$/.test(t)) return `${t} ${Number(t) > 1 ? pluriel : singulier}`;
+  return pieces ? t.replace(/\b(p)art(s?)\b/gi, (_, p, s) => `${p}ièce${s}`) : t;
 }
 
 // ---------- Ce que couvre le prix : "4 personnes", "6 à 8 personnes", "12 pièces", "1 pièce" ----------

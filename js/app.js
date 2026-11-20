@@ -2,7 +2,7 @@ import { $, showToast, saveCart, catalog, subscribeCatalog, subscribeShopSetting
 import { loadCart, addItem } from "./cart.js";
 import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
-  productUrl, formatParts, formatPrixPour, shopGroups, isOrderable, isPreorder, preorderLabel,
+  productUrl, formatParts, isPieces, formatPrixPour, shopGroups, isOrderable, isPreorder, preorderLabel,
   productTags, allTags, hasTag, tagKey
 } from "./catalog.js";
 import { getFavorites, toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
@@ -177,7 +177,7 @@ function productCard(p, catLabel) {
   const preorder = isPreorder(p);           // hors saison, mais commandable pour une date dans sa saison
   const blocked = !isOrderable(p);          // épuisé ou retiré manuellement
   const season = seasonLabel(p.saison);
-  const parts = formatParts(p.parts);
+  const parts = formatParts(p.parts, isPieces(p));
   const pour = formatPrixPour(p.prixPour);
   const tags = productTags(p);
   const img = p.imageUrl

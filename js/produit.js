@@ -2,7 +2,7 @@ import { $, showToast, saveCart, catalog, subscribeCatalog } from "./shop-common
 import { loadCart, addItem } from "./cart.js";
 import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
-  productImages, productUrl, formatParts, formatPrixPour,
+  productImages, productUrl, formatParts, isPieces, formatPrixPour,
   isOrderable, isPreorder, preorderLabel, seasonWindow, formatDateFR
 } from "./catalog.js";
 import { toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
@@ -66,7 +66,8 @@ function renderProductPage() {
   if (p.conservation) detailBlocks.push(`<p class="font-medium text-[#2C2A29]">${esc(p.conservation)}</p>`);
   if (p.composition) detailBlocks.push(`<p>${esc(p.composition).replace(/\n/g, "<br>")}</p>`);
   if (allergenes.length) detailBlocks.push(`<p>Présence de : <span class="font-medium text-[#2C2A29]">${esc(allergenes.map((a) => a.toLowerCase()).join(", "))}</span></p>`);
-  const facts = [formatParts(p.parts) && `Pour ${esc(formatParts(p.parts))}`, p.poids && `Poids : ${esc(p.poids)}`, season && `Saison : ${esc(season.toLowerCase())}`].filter(Boolean);
+  const partsTxt = formatParts(p.parts, isPieces(p));
+  const facts = [partsTxt && `Pour ${esc(partsTxt)}`, p.poids && `Poids : ${esc(p.poids)}`, season && `Saison : ${esc(season.toLowerCase())}`].filter(Boolean);
   if (facts.length) detailBlocks.push(`<p class="text-[#7F7973]">${facts.join(" &nbsp;&bull;&nbsp; ")}</p>`);
 
   const detailsHtml = detailBlocks.length

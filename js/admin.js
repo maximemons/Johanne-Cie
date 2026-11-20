@@ -749,6 +749,7 @@ productForm.addEventListener("submit", (e) => {
     prixPour: pourNombre >= 1
       ? { nombre: pourNombre, nombreMax: pourMax > pourNombre ? pourMax : null, unite: $("prod-pour-unite").value }
       : null,
+    unite: $("prod-pour-unite").value,
     nom: $("prod-nom").value.trim(),
     categorieId: $("prod-categorie").value,
     prix: Number($("prod-prix").value),
@@ -867,7 +868,7 @@ function editProduct(p) {
   $("prod-revient").value = currentCost(state.couts[p.id]?.historique) ?? "";
   $("prod-pour-nombre").value = p.prixPour?.nombre ?? "";
   $("prod-pour-max").value = p.prixPour?.nombreMax ?? "";
-  $("prod-pour-unite").value = p.prixPour?.unite === "pieces" ? "pieces" : "personnes";
+  $("prod-pour-unite").value = (p.prixPour?.unite || p.unite) === "pieces" ? "pieces" : "personnes";
   $("prod-image").value = p.imageUrl || "";
   $("prod-desc").value = p.description || "";
   $("prod-images").value = (p.images || []).join("\n");
