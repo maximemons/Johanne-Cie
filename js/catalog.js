@@ -98,6 +98,11 @@ export function groupByCategory(categories, products, { includeEmpty = false } =
   return [...groups.filter((g) => g.products.length), ...(autre.products.length ? [autre] : [])];
 }
 
+// ---------- Brouillons ----------
+// `brouillon: true` sur une pâtisserie = visible en admin seulement, jamais en boutique.
+// Champ absent ou false = publiée (les pâtisseries existantes restent donc visibles).
+export const isDraft = (p) => p?.brouillon === true;
+
 // ---------- Saisonnalité & disponibilité ----------
 export function normalizeStatut(statut) {
   const s = String(statut || "").trim().toLowerCase();
@@ -238,6 +243,8 @@ export function formatPrixPour(pp) {
 
 // ---------- Best-Sellers : sélection manuelle (étoile en admin), sans lien avec les ventes ----------
 export const BEST_ID = "__best__";
+/** Filtre admin « Brouillons » (liste des pâtisseries). */
+export const DRAFT_ID = "__brouillons__";
 export const BEST_LABEL = "Best-Sellers";
 
 export const FAV_ID = "__favoris__";
@@ -340,6 +347,8 @@ export function productParfums(p) {
 
 export const hasParfums = (p) => productParfums(p).length > 0;
 export const availableParfums = (p) => productParfums(p).filter((x) => x.dispo);
+/** Parfum présélectionné : le premier parfum disponible, dans l'ordre réglé en admin ("" s'il n'y en a aucun). */
+export const defaultParfum = (p) => availableParfums(p)[0]?.nom || "";
 /** Le parfum `nom` de la pâtisserie (ou null s'il n'existe plus). */
 export const findParfum = (p, nom) => productParfums(p).find((x) => parfumKey(x.nom) === parfumKey(nom)) || null;
 

@@ -1,6 +1,6 @@
 import { db, auth, authReady } from "./config.js";
 import {
-  ADMIN_EMAIL, EMAIL_LINK_KEY, ALLERGENES, BEST_ID, AUTRE_ID, AUTRE_LABEL, MOIS, ORDER_STATUTS,
+  ADMIN_EMAIL, EMAIL_LINK_KEY, ALLERGENES, BEST_ID, DRAFT_ID, isDraft, AUTRE_ID, AUTRE_LABEL, MOIS, ORDER_STATUTS,
   esc, formatPrice, formatDateFR, todayISO, tomorrowISO, catName, isCategoryActive,
   groupByCategory, normalizeStatut, hasSeason, seasonLabel, isInSeason, formatPrixPour,
   normalizeOrderStatut, isOrderOpen, normalizeShopSettings, cleanTag, tagKey, productTags, allTags,
@@ -820,7 +820,7 @@ function renderProductForm() {
   const f = $("prod-filter-cat");
   const fcur = state.prodCat;
   f.innerHTML =
-    `<option value="ALL">Toutes les catégories</option><option value="${BEST_ID}">&#9733; Best-Sellers</option>` +
+    `<option value="ALL">Toutes les catégories</option><option value="${BEST_ID}">&#9733; Best-Sellers</option><option value="${DRAFT_ID}">&#9998; Brouillons</option>` +
     groupByCategory(state.categories, [], { includeEmpty: true })
       .map((g) => `<option value="${esc(g.id)}">${esc(g.nom)}</option>`).join("");
   f.value = fcur;
@@ -857,6 +857,7 @@ function resetProductForm() {
   formParfums = [];
   renderFormParfums();
   $("prod-edit-id").value = "";
+  $("prod-brouillon").checked = false;
   $("prod-saison-range").classList.add("hidden");
   $("product-form-title").textContent = "Ajouter une pâtisserie";
   $("prod-submit-btn").textContent = "Enregistrer la pâtisserie";
@@ -887,6 +888,7 @@ productForm.addEventListener("submit", (e) => {
     categorieId: $("prod-categorie").value,
     prix: Number($("prod-prix").value),
     statut: $("prod-statut").value,
+    brouillon: $("prod-brouillon").checked,
     saison: periode ? { debut: Number($("prod-saison-debut").value), fin: Number($("prod-saison-fin").value) } : null,
     imageUrl: $("prod-image").value.trim(),
     images: parseUrlLines($("prod-images").value),
@@ -915,7 +917,7 @@ productForm.addEventListener("submit", (e) => {
     }
     resetProductForm();
     if (offer) offerSellingPrice(offer); // popup : valider le prix de vente suggéré
-  }, id ? "Pâtisserie mise à jour" : "Pâtisserie ajoutée", "Erreur lors de l'enregistrement");
+  }, `${id ? "Pâtisserie mise à jour" : "Pâtisserie ajoutée"}${data.brouillon ? " (brouillon, invisible en boutique)" : ""}`, "Erreur lors de l'enregistrement");
 });
 
 $("prod-search").addEventListener("input", (e) => { state.prodSearch = e.target.value.trim().toLowerCase(); renderProducts(); });
@@ -932,10 +934,16 @@ function renderProducts() {
   groups.forEach((g) => g.products.forEach((p) => catOf.set(p.id, g)));
 
   const bestCount = state.products.filter((p) => p.bestSeller === true).length;
-  $("best-count").textContent = bestCount ? `\u2605 ${bestCount} best-seller${bestCount > 1 ? "s" : ""}` : "";
+  const draftCount = state.products.filter(isDraft).length;
+  $("best-count").textContent = [
+    bestCount && `\u2605 ${bestCount} best-seller${bestCount > 1 ? "s" : ""}`,
+    draftCount && `\u270E ${draftCount} brouillon${draftCount > 1 ? "s" : ""}`
+  ].filter(Boolean).join(" \u00B7 ");
 
   const items = (state.prodCat === BEST_ID
     ? groups.flatMap((g) => g.products).filter((p) => p.bestSeller === true)
+    : state.prodCat === DRAFT_ID
+    ? groups.flatMap((g) => g.products).filter(isDraft)
     : groups.filter((g) => state.prodCat === "ALL" || g.id === state.prodCat).flatMap((g) => g.products))
     .filter((p) => !state.prodSearch
       || String(p.nom || "").toLowerCase().includes(state.prodSearch)
@@ -956,8 +964,9 @@ function renderProducts() {
       : statut === "Épuisé" ? "bg-red-50 text-red-800 border-red-200"
       : "bg-stone-100 text-stone-700 border-stone-300";
     const season = seasonLabel(p.saison);
+    const draft = isDraft(p);
     return `
-      <article class="border border-[#2C2A29]/15 bg-white p-4 flex gap-4">
+      <article class="${draft ? "border border-dashed border-violet-300 bg-violet-50/40" : "border border-[#2C2A29]/15 bg-white"} p-4 flex gap-4">
         <div class="w-20 h-20 shrink-0 bg-[#F4F0E8] border border-[#2C2A29]/10 overflow-hidden">
           <img src="${esc(p.imageUrl || "assets/logo.svg")}" alt="" class="w-full h-full ${p.imageUrl ? "object-cover" : "object-contain p-1"}" loading="lazy" />
         </div>
@@ -969,6 +978,7 @@ function renderProducts() {
                 <button type="button" data-action="prod-best" data-id="${esc(p.id)}" aria-pressed="${p.bestSeller === true}"
                   title="${p.bestSeller === true ? "Retirer des Best-Sellers" : "Ajouter aux Best-Sellers"}"
                   class="text-2xl leading-none transition-colors ${p.bestSeller === true ? "text-amber-600" : "text-[#2C2A29]/30 hover:text-amber-600"}">${p.bestSeller === true ? "&#9733;" : "&#9734;"}</button>
+                ${draft ? `<span class="text-[11px] px-2 py-0.5 border bg-violet-100 text-violet-800 border-violet-300" title="Invisible en boutique">Brouillon</span>` : ""}
                 <span class="text-[11px] px-2 py-0.5 border ${chip}">${statut}</span>
               </span>
             </div>
@@ -986,10 +996,12 @@ function renderProducts() {
                 class="inline-flex items-center gap-1 pl-0.5 pr-1.5 py-0.5 border text-[10px] ${x.dispo ? "border-[#2C2A29]/30 text-[#2C2A29] hover:border-[#2C2A29]" : "border-red-200 bg-red-50 text-red-800 line-through"}">
                 ${x.image ? `<img src="${esc(x.image)}" alt="" class="w-4 h-4 object-cover" loading="lazy" />` : `<span class="w-1"></span>`}${esc(x.nom)} &middot; ${formatPrice(x.prix)}
               </button>`).join("")}</div>` : ""}
-            ${autoOff ? `<p class="text-[11px] text-amber-800">Actuellement hors-saison : non commandable</p>` : ""}
+            ${draft ? `<p class="text-[11px] text-violet-800">Brouillon : invisible des clients</p>` : ""}
+            ${autoOff && !draft ? `<p class="text-[11px] text-amber-800">Actuellement hors-saison : non commandable</p>` : ""}
           </div>
           <div class="flex flex-wrap gap-2">
             <button type="button" data-action="prod-stock" data-id="${esc(p.id)}" class="px-3 py-1.5 border border-[#2C2A29] text-[11px] uppercase tracking-[0.12em] hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors">${statut === "Disponible" ? "Marquer épuisé" : "Remettre en stock"}</button>
+            <button type="button" data-action="prod-draft" data-id="${esc(p.id)}" class="px-3 py-1.5 border ${draft ? "border-violet-700 bg-violet-700 text-white hover:bg-violet-800" : "border-violet-300 text-violet-800 hover:border-violet-700"} text-[11px] uppercase tracking-[0.12em] transition-colors">${draft ? "Publier" : "Passer en brouillon"}</button>
             <button type="button" data-action="prod-cost" data-id="${esc(p.id)}" class="px-3 py-1.5 border border-[#2C2A29]/40 text-[11px] uppercase tracking-[0.12em] hover:border-[#2C2A29]">Revient</button>
             <button type="button" data-action="prod-edit" data-id="${esc(p.id)}" class="px-3 py-1.5 border border-[#2C2A29]/40 text-[11px] uppercase tracking-[0.12em] hover:border-[#2C2A29]">Modifier</button>
             <button type="button" data-action="prod-delete" data-id="${esc(p.id)}" class="px-3 py-1.5 border border-red-300 text-red-700 text-[11px] uppercase tracking-[0.12em] hover:bg-red-700 hover:text-white transition-colors">Supprimer</button>
@@ -1005,6 +1017,7 @@ function editProduct(p) {
   $("prod-categorie").value = state.categories.some((c) => c.id === p.categorieId && isCategoryActive(c)) ? p.categorieId : "";
   $("prod-prix").value = p.prix ?? "";
   $("prod-statut").value = normalizeStatut(p.statut);
+  $("prod-brouillon").checked = isDraft(p);
   $("prod-revient").value = currentCost(state.couts[p.id]?.historique) ?? "";
   $("prod-pour-nombre").value = p.prixPour?.nombre ?? "";
   $("prod-pour-max").value = p.prixPour?.nombreMax ?? "";
@@ -1129,6 +1142,12 @@ document.addEventListener("click", (e) => {
     const next = p.bestSeller !== true;
     run(() => updateDoc(doc(db, "patisseries", id), { bestSeller: next }),
       next ? "Ajoutée aux Best-Sellers" : "Retirée des Best-Sellers");
+  } else if (action === "prod-draft") {
+    const p = state.products.find((x) => x.id === id);
+    if (!p) return;
+    const next = !isDraft(p);
+    run(() => updateDoc(doc(db, "patisseries", id), { brouillon: next }),
+      next ? "Passée en brouillon : invisible en boutique" : "Publiée : visible en boutique");
   } else if (action === "prod-edit") {
     const p = state.products.find((x) => x.id === id);
     if (p) editProduct(p);

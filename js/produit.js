@@ -4,12 +4,12 @@ import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
   productImages, productUrl, formatParts, isPieces, formatPrixPour,
   isOrderable, isPreorder, preorderLabel, seasonWindow, formatDateFR,
-  productParfums, findParfum, formatDisplayPrice, imagesForParfum
+  productParfums, findParfum, formatDisplayPrice, imagesForParfum, defaultParfum
 } from "./catalog.js";
 import { toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
 
 const productId = new URLSearchParams(window.location.search).get("id");
-// ?parfum=… : parfum déjà choisi sur la carte de l'accueil
+// ?parfum=… : parfum déjà choisi sur la carte de l'accueil (à défaut, le premier parfum disponible est présélectionné)
 const state = { qty: 1, galleryIndex: 0, parfum: new URLSearchParams(window.location.search).get("parfum") || "" };
 const productDetail = $("product-detail");
 
@@ -65,6 +65,7 @@ function renderProductPage() {
   const parfums = productParfums(p);
   if (state.parfum && !findParfum(p, state.parfum)?.dispo) state.parfum = ""; // parfum retiré ou épuisé entre-temps
   else if (state.parfum) state.parfum = findParfum(p, state.parfum).nom;
+  if (!state.parfum) state.parfum = defaultParfum(p); // présélection : premier parfum disponible
   const imgs = imagesForParfum(p, state.parfum);
   const idx = Math.min(state.galleryIndex, Math.max(imgs.length - 1, 0));
   const season = seasonLabel(p.saison);

@@ -1,7 +1,7 @@
 // Éléments communs aux pages boutique (index.html, produit.html, panier.html, compte.html)
 import { db, auth } from "./config.js";
 import { loadCart, persistCart, getCartCount } from "./cart.js";
-import { normalizeShopSettings } from "./catalog.js";
+import { normalizeShopSettings, isDraft } from "./catalog.js";
 import { createOrderWatcher, showAlert, orderNumber } from "./web-notify.js";
 import { collection, doc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
@@ -34,6 +34,8 @@ export function saveCart(cart) {
 }
 
 // Catalogue partagé, mis à jour en temps réel. `ready` = catégories ET pâtisseries reçues.
+// Les brouillons (`brouillon: true`) en sont exclus : pour toutes les pages boutique, ils n'existent pas
+// (carte, fiche produit, suggestions, tags, favoris, panier, « Recommander »).
 export const catalog = { categories: [], products: [], ready: false };
 
 export function subscribeCatalog(onChange) {
@@ -48,7 +50,7 @@ export function subscribeCatalog(onChange) {
     update();
   });
   onSnapshot(collection(db, "patisseries"), (snap) => {
-    catalog.products = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    catalog.products = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => !isDraft(p));
     prodsLoaded = true;
     update();
   });

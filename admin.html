@@ -101,6 +101,12 @@
                 <option value="Hors-Saison">Hors-Saison (retirée manuellement)</option>
               </select>
             </div>
+            <div class="sm:col-span-2 border border-dashed border-violet-300 bg-violet-50/50 p-4">
+              <label class="flex items-start gap-3 text-sm"><input type="checkbox" id="prod-brouillon" class="w-4 h-4 mt-0.5 accent-[#2C2A29]" />
+                <span><strong>Brouillon</strong> &mdash; invisible en boutique
+                  <span class="block text-xs text-[#7F7973] mt-0.5">La pâtisserie reste ici, en admin, mais les clients ne la voient nulle part (carte, fiche, panier). Décochez pour la publier.</span></span>
+              </label>
+            </div>
             <div>
               <label class="lbl" for="prod-revient">Prix de revient (&euro;) &mdash; privé</label>
               <input type="number" step="0.01" min="0" id="prod-revient" placeholder="Ex : 14.50" class="inp" />

@@ -4,9 +4,18 @@ import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
   productUrl, formatParts, isPieces, formatPrixPour, shopGroups, isOrderable, isPreorder, preorderLabel,
   productTags, allTags, hasTag, tagKey,
-  productParfums, findParfum, formatDisplayPrice
+  productParfums, findParfum, formatDisplayPrice, defaultParfum
 } from "./catalog.js";
 import { getFavorites, toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
+
+/**
+ * Parfum sélectionné sur la carte d'une pâtisserie : celui choisi par le client s'il est toujours
+ * disponible, sinon le premier parfum disponible (présélection par défaut). "" si pas de parfums.
+ */
+function chosenParfum(p) {
+  const picked = state.parfums[p.id] && findParfum(p, state.parfums[p.id]);
+  return picked?.dispo ? picked.nom : defaultParfum(p);
+}
 
 const state = {
   activeCategory: null,   // catégorie en cours (scrollspy)
@@ -183,7 +192,7 @@ function productCard(p, catLabel) {
   const pour = formatPrixPour(p.prixPour);
   const tags = productTags(p);
   const parfums = productParfums(p);
-  const chosen = state.parfums[p.id] && findParfum(p, state.parfums[p.id]) ? state.parfums[p.id] : "";
+  const chosen = chosenParfum(p);
   const link = `${productUrl(p.id)}${chosen ? `&parfum=${encodeURIComponent(chosen)}` : ""}`;
   const cardImage = (chosen && findParfum(p, chosen).image) || p.imageUrl;
   const img = cardImage
@@ -314,7 +323,7 @@ function addToCart(productId, qty = 1) {
   if (!isOrderable(product)) return showToast(`Indisponible (${getAvailability(product).reason})`);
   let parfum = "";
   if (productParfums(product).length) {
-    parfum = state.parfums[productId] || "";
+    parfum = chosenParfum(product);
     const found = parfum && findParfum(product, parfum);
     if (!found || !found.dispo) {
       const sel = productsGrid.querySelector(`select[data-parfum-for="${CSS.escape(productId)}"]`);
