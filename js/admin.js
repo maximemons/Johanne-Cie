@@ -677,7 +677,8 @@ $("prod-tag-existing").addEventListener("click", (e) => {
 });
 
 // ---------- Parfums du formulaire ----------
-// Lignes éditées : { nom, prix, image, dispo } (prix "" = prix de la pâtisserie)
+// Lignes éditées : { nom, prix, image, dispo, description, composition }
+// (prix "" = prix de la pâtisserie ; description / composition vides = celles de la fiche générale)
 let formParfums = [];
 
 /** Relit les champs (la saisie n'est pas redessinée à chaque frappe). */
@@ -689,7 +690,9 @@ function readFormParfums() {
       nom: row.querySelector("[data-pf='nom']").value,
       prix: row.querySelector("[data-pf='prix']").value.trim(),
       image: row.querySelector("[data-pf='image']").value.trim(),
-      dispo: row.querySelector("[data-pf='dispo']").checked
+      dispo: row.querySelector("[data-pf='dispo']").checked,
+      description: row.querySelector("[data-pf='description']").value.trim(),
+      composition: row.querySelector("[data-pf='composition']").value.trim()
     };
   });
 }
@@ -714,6 +717,8 @@ function renderFormParfums() {
           <div class="sm:col-span-2"><label class="lbl" for="pf-prix-${i}">Prix (&euro;)</label><input id="pf-prix-${i}" data-pf="prix" type="number" step="0.01" min="0" value="${esc(x.prix)}" placeholder="${esc($("prod-prix").value || "Prix de base")}" class="inp" /></div>
           <label class="sm:col-span-1 flex items-center gap-2 text-xs sm:pt-6"><input data-pf="dispo" type="checkbox" ${x.dispo ? "checked" : ""} class="accent-[#2C2A29]" /> Disponible</label>
           <div class="sm:col-span-6"><label class="lbl" for="pf-image-${i}">Image du parfum (URL, optionnel)</label><input id="pf-image-${i}" data-pf="image" type="url" value="${esc(x.image)}" placeholder="https://..." class="inp" /></div>
+          <div class="sm:col-span-6"><label class="lbl" for="pf-desc-${i}">Description courte du parfum (optionnel)</label><textarea id="pf-desc-${i}" data-pf="description" rows="2" placeholder="Vide = description de la pâtisserie" class="inp">${esc(x.description)}</textarea></div>
+          <div class="sm:col-span-6"><label class="lbl" for="pf-compo-${i}">Composition du parfum (optionnel)</label><textarea id="pf-compo-${i}" data-pf="composition" rows="2" placeholder="Vide = composition de la pâtisserie" class="inp">${esc(x.composition)}</textarea></div>
         </div>
         <div class="flex flex-col gap-1 shrink-0">
           <button type="button" data-pf-up="${i}" ${i === 0 ? "disabled" : ""} aria-label="Monter ${esc(x.nom || "ce parfum")}" class="w-8 h-8 border border-[#2C2A29]/30 hover:border-[#2C2A29] disabled:opacity-30">&uarr;</button>
@@ -739,7 +744,7 @@ function renderParfumSuggestions() {
 
 function addFormParfum(nom = "") {
   readFormParfums();
-  formParfums.push({ nom, prix: "", image: "", dispo: true });
+  formParfums.push({ nom, prix: "", image: "", dispo: true, description: "", composition: "" });
   renderFormParfums();
   const inputs = document.querySelectorAll("#prod-parfums [data-pf='" + (nom ? "prix" : "nom") + "']");
   inputs[inputs.length - 1]?.focus();
@@ -786,14 +791,14 @@ function collectFormParfums() {
   const out = [], seen = new Set();
   for (const x of formParfums) {
     const nom = cleanParfumName(x.nom);
-    if (!nom && !x.prix && !x.image) continue; // ligne laissée vide
+    if (!nom && !x.prix && !x.image && !x.description && !x.composition) continue; // ligne laissée vide
     if (!nom) return { error: "Chaque parfum doit avoir un nom" };
     if (seen.has(parfumKey(nom))) return { error: `Parfum en double : « ${nom} »` };
     seen.add(parfumKey(nom));
     const prix = x.prix === "" ? null : Number(x.prix);
     if (prix !== null && !(prix >= 0)) return { error: `Prix invalide pour « ${nom} »` };
     if (x.image && !/^https?:\/\//i.test(x.image)) return { error: `Image invalide pour « ${nom} » (URL https://…)` };
-    out.push({ nom, prix, image: x.image || "", dispo: x.dispo !== false });
+    out.push({ nom, prix, image: x.image || "", dispo: x.dispo !== false, description: x.description || "", composition: x.composition || "" });
   }
   return { parfums: out };
 }
@@ -1034,7 +1039,8 @@ function editProduct(p) {
   tagInput.value = "";
   renderFormTags();
   formParfums = (Array.isArray(p.parfums) ? p.parfums : []).map((x) => ({
-    nom: x?.nom || "", prix: x?.prix == null ? "" : String(x.prix), image: x?.image || "", dispo: x?.dispo !== false
+    nom: x?.nom || "", prix: x?.prix == null ? "" : String(x.prix), image: x?.image || "", dispo: x?.dispo !== false,
+    description: x?.description || "", composition: x?.composition || ""
   }));
   renderFormParfums();
   const seasonal = hasSeason(p.saison);

@@ -4,7 +4,8 @@ import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
   productImages, productUrl, formatParts, isPieces, formatPrixPour,
   isOrderable, isPreorder, preorderLabel, seasonWindow, formatDateFR,
-  productParfums, findParfum, formatDisplayPrice, imagesForParfum, defaultParfum
+  productParfums, findParfum, formatDisplayPrice, imagesForParfum, defaultParfum,
+  descriptionForParfum, compositionForParfum
 } from "./catalog.js";
 import { toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
 
@@ -70,6 +71,9 @@ function renderProductPage() {
   const idx = Math.min(state.galleryIndex, Math.max(imgs.length - 1, 0));
   const season = seasonLabel(p.saison);
   const allergenes = Array.isArray(p.allergenes) ? p.allergenes : [];
+  // Description et composition du parfum choisi, à défaut celles de la fiche générale
+  const description = descriptionForParfum(p, state.parfum);
+  const composition = compositionForParfum(p, state.parfum);
 
   // Galerie
   const main = imgs.length
@@ -85,7 +89,7 @@ function renderProductPage() {
   // Détails (seules les rubriques renseignées apparaissent)
   const detailBlocks = [];
   if (p.conservation) detailBlocks.push(`<p class="font-medium text-[#2C2A29]">${esc(p.conservation)}</p>`);
-  if (p.composition) detailBlocks.push(`<p>${esc(p.composition).replace(/\n/g, "<br>")}</p>`);
+  if (composition) detailBlocks.push(`<p>${esc(composition).replace(/\n/g, "<br>")}</p>`);
   if (allergenes.length) detailBlocks.push(`<p>Présence de : <span class="font-medium text-[#2C2A29]">${esc(allergenes.map((a) => a.toLowerCase()).join(", "))}</span></p>`);
   const partsTxt = formatParts(p.parts, isPieces(p));
   const facts = [partsTxt && `Pour ${esc(partsTxt)}`, p.poids && `Poids : ${esc(p.poids)}`, season && `Saison : ${esc(season.toLowerCase())}`].filter(Boolean);
@@ -178,7 +182,7 @@ function renderProductPage() {
           <p class="font-serif text-3xl">${formatDisplayPrice(p, state.parfum)}</p>
           ${formatPrixPour(p.prixPour) ? `<p class="mt-1 text-xs uppercase tracking-[0.2em] text-[#7F7973]">Pour ${esc(formatPrixPour(p.prixPour))}</p>` : ""}
         </div>
-        ${p.description ? `<p class="text-sm text-[#7F7973] leading-relaxed">${esc(p.description)}${detailBlocks.length ? ` <a href="#product-details" data-scroll class="text-[#2C2A29] underline underline-offset-4">Plus de détails</a>` : ""}</p>` : ""}
+        ${description ? `<p class="text-sm text-[#7F7973] leading-relaxed">${esc(description).replace(/\n/g, "<br>")}${detailBlocks.length ? ` <a href="#product-details" data-scroll class="text-[#2C2A29] underline underline-offset-4">Plus de détails</a>` : ""}</p>` : ""}
         ${season ? `<p class="text-[11px] uppercase tracking-[0.18em] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
         ${parfumsHtml}
         ${action}

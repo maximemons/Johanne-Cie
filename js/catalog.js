@@ -318,6 +318,8 @@ export function normalizeShopSettings(d) {
 // `prix` est le prix de la pâtisserie dans ce parfum (à défaut, le prix de la pâtisserie).
 // `dispo: false` = parfum momentanément indisponible (affiché, mais non commandable).
 // `image` (URL, facultative) remplace la photo principale quand ce parfum est choisi.
+// `description` (courte) et `composition` (facultatives) remplacent celles de la fiche générale quand ce parfum
+// est choisi ; laissées vides, ce sont celles de la pâtisserie qui s'affichent.
 export const PARFUM_MAX_LENGTH = 40;
 export const cleanParfumName = (t) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, PARFUM_MAX_LENGTH);
 export const parfumKey = (t) => cleanParfumName(t).toLocaleLowerCase("fr");
@@ -334,7 +336,9 @@ export function productParfums(p) {
         nom: cleanParfumName(x?.nom),
         prix: x?.prix === "" || x?.prix == null || !(prix >= 0) ? base : prix,
         dispo: x?.dispo !== false,
-        image: isUrl(image) ? image : ""
+        image: isUrl(image) ? image : "",
+        description: String(x?.description ?? "").trim(),
+        composition: String(x?.composition ?? "").trim()
       };
     })
     .filter((x) => {
@@ -372,6 +376,17 @@ export function imagesForParfum(p, parfumNom = "") {
   const own = parfumNom ? findParfum(p, parfumNom)?.image : "";
   const base = productImages(p);
   return own ? [own, ...base.filter((u) => u !== own)] : base;
+}
+
+/** Description courte à afficher : celle du parfum choisi, à défaut celle de la fiche générale. */
+export function descriptionForParfum(p, parfumNom = "") {
+  const own = parfumNom ? findParfum(p, parfumNom)?.description : "";
+  return own || String(p?.description ?? "").trim();
+}
+/** Composition à afficher : celle du parfum choisi, à défaut celle de la fiche générale. */
+export function compositionForParfum(p, parfumNom = "") {
+  const own = parfumNom ? findParfum(p, parfumNom)?.composition : "";
+  return own || String(p?.composition ?? "").trim();
 }
 
 /** Libellé d'un article de panier / commande : « Bûche roulée — Praliné ». */

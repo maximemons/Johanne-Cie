@@ -4,7 +4,7 @@ import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
   productUrl, formatParts, isPieces, formatPrixPour, shopGroups, isOrderable, isPreorder, preorderLabel,
   productTags, allTags, hasTag, tagKey,
-  productParfums, findParfum, formatDisplayPrice, defaultParfum
+  productParfums, findParfum, formatDisplayPrice, defaultParfum, descriptionForParfum
 } from "./catalog.js";
 import { getFavorites, toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
 
@@ -195,6 +195,7 @@ function productCard(p, catLabel) {
   const chosen = chosenParfum(p);
   const link = `${productUrl(p.id)}${chosen ? `&parfum=${encodeURIComponent(chosen)}` : ""}`;
   const cardImage = (chosen && findParfum(p, chosen).image) || p.imageUrl;
+  const description = descriptionForParfum(p, chosen); // celle du parfum choisi, à défaut celle de la pâtisserie
   const img = cardImage
     ? `<img src="${esc(cardImage)}" data-card-img alt="${esc(p.nom)}" class="w-full h-full object-cover ${blocked ? "grayscale opacity-75" : ""}" loading="lazy" />`
     : `<img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-full object-contain p-6 bg-[#FDFBF7] opacity-80" />`;
@@ -234,7 +235,7 @@ function productCard(p, catLabel) {
             const on = state.tag && tagKey(t) === tagKey(state.tag);
             return `<li><button type="button" data-tag="${esc(t)}" aria-pressed="${on ? "true" : "false"}" title="${on ? "Voir toute la carte" : `Voir les pâtisseries « ${esc(t)} »`}" class="tag-chip${on ? " is-on" : ""}">${esc(t)}</button></li>`;
           }).join("")}</ul>` : ""}
-          ${p.description ? `<p class="text-xs text-[#7F7973] leading-relaxed pt-1">${esc(p.description)}</p>` : ""}
+          <p data-card-desc class="text-xs text-[#7F7973] leading-relaxed pt-1${description ? "" : " hidden"}">${esc(description)}</p>
           <a href="${link}" class="inline-block pt-1 text-[10px] uppercase tracking-[0.2em] text-[#2C2A29] underline underline-offset-4">Voir le détail &rarr;</a>
         </div>
       </div>
@@ -292,7 +293,7 @@ productsGrid.addEventListener("click", (e) => {
   else if (fav) showToast(toggleFavorite(fav.dataset.favId) ? "Ajouté aux favoris" : "Retiré des favoris");
 });
 
-// Choix d'un parfum sur une carte : le prix et la photo de toutes les cartes de cette pâtisserie suivent
+// Choix d'un parfum sur une carte : le prix, la description et la photo de toutes les cartes de cette pâtisserie suivent
 // (une même pâtisserie peut apparaître deux fois : Favoris / Best-Sellers + sa catégorie)
 productsGrid.addEventListener("change", (e) => {
   const sel = e.target.closest("select[data-parfum-for]");
@@ -308,6 +309,12 @@ productsGrid.addEventListener("change", (e) => {
     other.classList.remove("parfum-missing");
     const card = other.closest("article");
     card.querySelector("[data-card-price]").textContent = formatDisplayPrice(product, sel.value);
+    const desc = card.querySelector("[data-card-desc]");
+    if (desc) {
+      const txt = descriptionForParfum(product, sel.value);
+      desc.textContent = txt;
+      desc.classList.toggle("hidden", !txt);
+    }
     card.querySelectorAll(`a[href^="produit.html"]`).forEach((a) => {
       a.href = `${productUrl(id)}${sel.value ? `&parfum=${encodeURIComponent(sel.value)}` : ""}`;
     });
