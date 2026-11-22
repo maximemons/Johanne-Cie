@@ -2,7 +2,10 @@
 import { db, auth } from "./config.js";
 import { loadCart, addItem } from "./cart.js";
 import { saveCart } from "./shop-common.js";
-import { canClientCancel, isOrderable, isPreorder, seasonWindow, formatDateFR, normalizeStatut } from "./catalog.js";
+import {
+  canClientCancel, isOrderable, isPreorder, seasonWindow, formatDateFR, normalizeStatut,
+  productParfums, findParfum, articleLabel
+} from "./catalog.js";
 import {
   collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
@@ -68,8 +71,19 @@ export function reorderToCart(order, products) {
       skipped.push({ nom: live.nom, raison: s === "Épuisé" ? "est épuisée" : "est retirée de la carte pour le moment" });
       continue;
     }
-    addItem(cart, live, Number(a.quantity) || 1);
-    added.push(live.nom);
+    // Recette à parfums : on reprend le même parfum, s'il est toujours proposé
+    let parfum = "";
+    if (productParfums(live).length) {
+      const found = a.parfum && findParfum(live, a.parfum);
+      if (!found) {
+        skipped.push({ nom: articleLabel({ nom: live.nom, parfum: a.parfum }), raison: a.parfum ? "n'est plus proposée dans ce parfum" : "se commande maintenant avec un choix de parfum (à faire sur sa fiche)" });
+        continue;
+      }
+      if (!found.dispo) { skipped.push({ nom: articleLabel({ nom: live.nom, parfum: found.nom }), raison: "est épuisée dans ce parfum" }); continue; }
+      parfum = found.nom;
+    }
+    addItem(cart, live, Number(a.quantity) || 1, parfum);
+    added.push(articleLabel({ nom: live.nom, parfum }));
     if (isPreorder(live)) {
       const w = seasonWindow(live.saison);
       preorders.push({ nom: live.nom, debut: w.start, fin: w.end });

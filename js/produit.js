@@ -3,22 +3,39 @@ import { loadCart, addItem } from "./cart.js";
 import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
   productImages, productUrl, formatParts, isPieces, formatPrixPour,
-  isOrderable, isPreorder, preorderLabel, seasonWindow, formatDateFR
+  isOrderable, isPreorder, preorderLabel, seasonWindow, formatDateFR,
+  productParfums, findParfum, formatDisplayPrice, imagesForParfum
 } from "./catalog.js";
 import { toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
 
 const productId = new URLSearchParams(window.location.search).get("id");
-const state = { qty: 1, galleryIndex: 0 };
+// ?parfum=… : parfum déjà choisi sur la carte de l'accueil
+const state = { qty: 1, galleryIndex: 0, parfum: new URLSearchParams(window.location.search).get("parfum") || "" };
 const productDetail = $("product-detail");
 
 function addToCart(id, qty) {
   const product = catalog.products.find((p) => p.id === id);
-  if (!product) return;
-  if (!isOrderable(product)) return showToast(`Indisponible (${getAvailability(product).reason})`);
+  if (!product) return false;
+  if (!isOrderable(product)) { showToast(`Indisponible (${getAvailability(product).reason})`); return false; }
+  let parfum = "";
+  if (productParfums(product).length) {
+    const found = state.parfum && findParfum(product, state.parfum);
+    if (!found || !found.dispo) {
+      const box = productDetail.querySelector(".parfum-choices");
+      box?.scrollIntoView({ behavior: "smooth", block: "center" });
+      box?.classList.add("parfum-missing");
+      setTimeout(() => box?.classList.remove("parfum-missing"), 1500);
+      showToast("Choisissez d'abord un parfum");
+      return false;
+    }
+    parfum = found.nom;
+  }
   const cart = loadCart();
-  addItem(cart, product, qty);
+  addItem(cart, product, qty, parfum);
   saveCart(cart);
-  showToast(isPreorder(product) ? "Précommande ajoutée au panier" : "Ajouté au panier");
+  const what = parfum ? ` (${parfum})` : "";
+  showToast(isPreorder(product) ? `Précommande ajoutée${what}` : `Ajouté au panier${what}`);
+  return true;
 }
 
 const QTY_MAX = 50;
@@ -45,7 +62,10 @@ function renderProductPage() {
   const orderable = isOrderable(p);
   const preorder = isPreorder(p);
   const win = preorder ? seasonWindow(p.saison) : null;
-  const imgs = productImages(p);
+  const parfums = productParfums(p);
+  if (state.parfum && !findParfum(p, state.parfum)?.dispo) state.parfum = ""; // parfum retiré ou épuisé entre-temps
+  else if (state.parfum) state.parfum = findParfum(p, state.parfum).nom;
+  const imgs = imagesForParfum(p, state.parfum);
   const idx = Math.min(state.galleryIndex, Math.max(imgs.length - 1, 0));
   const season = seasonLabel(p.saison);
   const allergenes = Array.isArray(p.allergenes) ? p.allergenes : [];
@@ -93,7 +113,7 @@ function renderProductPage() {
              </div>
              <div class="p-4 flex items-baseline justify-between gap-3">
                <span class="font-serif text-lg leading-snug">${esc(x.nom)}</span>
-               <span class="font-serif text-base shrink-0">${formatPrice(x.prix)}</span>
+               <span class="font-serif text-base shrink-0">${formatDisplayPrice(x)}</span>
              </div>
            </a>`;
          }).join("")}</div>
@@ -103,6 +123,20 @@ function renderProductPage() {
   const preorderNote = preorder
     ? `<p class="text-xs leading-relaxed border border-[#2C2A29]/20 bg-[#F4F0E8] p-3">Hors saison aujourd'hui : vous pouvez la précommander dès maintenant pour un retrait entre le <strong>${esc(formatDateFR(win.start, false))}</strong> et le <strong>${esc(win.end ? formatDateFR(win.end) : "")}</strong>. La date se choisit dans le panier.</p>`
     : "";
+  const parfumsHtml = parfums.length
+    ? `<fieldset class="space-y-3">
+         <legend class="text-xs uppercase tracking-[0.18em] font-medium mb-3">Parfum${state.parfum ? ` : <span class="font-normal normal-case tracking-normal">${esc(state.parfum)}</span>` : ` <span class="font-normal normal-case tracking-normal text-[#7F7973]">— à choisir</span>`}</legend>
+         <div class="parfum-choices flex flex-wrap gap-2">${parfums.map((x) => {
+           const on = x.nom === state.parfum;
+           const off = !x.dispo || !orderable;
+           return `<button type="button" data-parfum="${esc(x.nom)}" aria-pressed="${on}" ${off ? "disabled" : ""} class="parfum-opt">
+             ${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" />` : ""}
+             <span><span class="block">${esc(x.nom)}</span><span class="block text-[11px] opacity-75">${x.dispo ? formatPrice(x.prix) : "Épuisé"}</span></span>
+           </button>`;
+         }).join("")}</div>
+       </fieldset>`
+    : "";
+
   const action = orderable
     ? `${preorderNote}<div class="flex flex-wrap items-stretch gap-3">
          <div class="flex items-center border border-[#2C2A29]/25">
@@ -140,11 +174,12 @@ function renderProductPage() {
           ${heartButton(p.id, p.nom, "shrink-0 mt-2")}
         </div>
         <div>
-          <p class="font-serif text-3xl">${formatPrice(p.prix)}</p>
+          <p class="font-serif text-3xl">${formatDisplayPrice(p, state.parfum)}</p>
           ${formatPrixPour(p.prixPour) ? `<p class="mt-1 text-xs uppercase tracking-[0.2em] text-[#7F7973]">Pour ${esc(formatPrixPour(p.prixPour))}</p>` : ""}
         </div>
         ${p.description ? `<p class="text-sm text-[#7F7973] leading-relaxed">${esc(p.description)}${detailBlocks.length ? ` <a href="#product-details" data-scroll class="text-[#2C2A29] underline underline-offset-4">Plus de détails</a>` : ""}</p>` : ""}
         ${season ? `<p class="text-[11px] uppercase tracking-[0.18em] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
+        ${parfumsHtml}
         ${action}
 
         <div class="border border-[#2C2A29]/15 bg-white divide-y divide-[#2C2A29]/10">
@@ -168,7 +203,12 @@ productDetail.addEventListener("click", (e) => {
   const add = e.target.closest("button[data-product-add]");
   const scroll = e.target.closest("a[data-scroll]");
   const fav = e.target.closest("button[data-fav-id]");
-  if (fav) {
+  const parfumBtn = e.target.closest("button[data-parfum]");
+  if (parfumBtn) {
+    state.parfum = parfumBtn.dataset.parfum;
+    state.galleryIndex = 0; // la photo du parfum (s'il en a une) passe en premier
+    renderProductPage();
+  } else if (fav) {
     showToast(toggleFavorite(fav.dataset.favId) ? "Ajouté aux favoris" : "Retiré des favoris");
   } else if (thumb) {
     state.galleryIndex = Number(thumb.dataset.galleryIdx);
@@ -177,9 +217,10 @@ productDetail.addEventListener("click", (e) => {
     state.qty = Math.min(QTY_MAX, Math.max(1, state.qty + Number(step.dataset.qtyStep)));
     $("product-qty").textContent = state.qty;
   } else if (add) {
-    addToCart(productId, state.qty);
-    state.qty = 1;
-    $("product-qty").textContent = 1;
+    if (addToCart(productId, state.qty)) {
+      state.qty = 1;
+      $("product-qty").textContent = 1;
+    }
   } else if (scroll) {
     e.preventDefault();
     document.getElementById("product-details")?.scrollIntoView({ behavior: "smooth" });

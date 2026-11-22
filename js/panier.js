@@ -3,7 +3,8 @@ import { $, showToast, saveCart, catalog, subscribeCatalog } from "./shop-common
 import { loadCart, getCartTotal, setItemDate, applyFirstDateToAll, removeItem } from "./cart.js";
 import {
   ADMIN_EMAIL, esc, formatPrice, formatDateFR, tomorrowISO, parseISODate,
-  getAvailability, seasonLabel, productUrl, isOrderable, isPreorder, seasonWindow, formatParts, isPieces
+  getAvailability, seasonLabel, productUrl, isOrderable, isPreorder, seasonWindow, formatParts, isPieces,
+  productParfums, findParfum, articleLabel
 } from "./catalog.js";
 import { mountAuthGate, watchUser, logout } from "./auth-ui.js";
 import { subscribeMyOrders, subscribeLoyaltySettings, takeFlash } from "./client-orders.js";
@@ -111,12 +112,19 @@ function renderCart() {
     const removed = [];
     state.cart = state.cart.filter((item) => {
       const live = liveOf(item);
-      const ok = live && isOrderable(live);
-      if (!ok) removed.push(live?.nom || item.nom);
+      let ok = live && isOrderable(live);
+      // Recette à parfums : le parfum choisi doit toujours exister et être disponible
+      if (ok && productParfums(live).length) {
+        const parfum = item.parfum && findParfum(live, item.parfum);
+        ok = Boolean(parfum?.dispo);
+      } else if (ok && item.parfum) {
+        ok = false; // l'atelier a retiré le choix de parfum de cette recette
+      }
+      if (!ok) removed.push(articleLabel({ nom: live?.nom || item.nom, parfum: item.parfum }));
       return ok;
     });
     if (removed.length) {
-      pushFlash("warn", removed.map((n) => `« ${n} » n'est plus disponible : elle a été retirée de votre panier.`));
+      pushFlash("warn", removed.map((n) => `« ${n} » n'est plus disponible : cet article a été retiré de votre panier.`));
     }
   }
   if (state.cart.length) state.cart[0].dateManual = false;
@@ -142,18 +150,19 @@ function renderCart() {
       return `
       <div class="flex items-center justify-between gap-4 p-4 border border-[#2C2A29]/15 bg-white">
         <div class="min-w-0 flex-1">
-          <h3 class="font-serif text-xl text-[#2C2A29] truncate"><a href="${productUrl(item.id)}" class="hover:underline underline-offset-4">${esc(item.nom)}</a></h3>
+          <h3 class="font-serif text-xl text-[#2C2A29] truncate"><a href="${productUrl(item.id)}${item.parfum ? `&parfum=${encodeURIComponent(item.parfum)}` : ""}" class="hover:underline underline-offset-4">${esc(item.nom)}</a></h3>
+          ${item.parfum ? `<p class="text-xs text-[#2C2A29] mt-0.5">Parfum : <strong class="font-medium">${esc(item.parfum)}</strong></p>` : ""}
           ${parts ? `<p class="text-[10px] uppercase tracking-[0.22em] text-[#2C2A29] mt-0.5">${esc(parts)}</p>` : ""}
           <p class="text-xs text-[#7F7973] mt-0.5">${formatPrice(item.prix)} / pièce${pre ? ` &bull; <span class="text-[#2C2A29]">précommande</span>` : ""}</p>
         </div>
         <div class="flex items-center border border-[#2C2A29]/25">
-          <button type="button" data-qty-delta="-1" data-id="${esc(item.id)}" class="px-3 py-1 text-sm hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors" aria-label="Retirer un ${esc(item.nom)}">&minus;</button>
+          <button type="button" data-qty-delta="-1" data-key="${esc(item.key)}" class="px-3 py-1 text-sm hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors" aria-label="Retirer un ${esc(articleLabel(item))}">&minus;</button>
           <span class="px-3 py-1 text-xs font-medium">${item.quantity}</span>
-          <button type="button" data-qty-delta="1" data-id="${esc(item.id)}" class="px-3 py-1 text-sm hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors" aria-label="Ajouter un ${esc(item.nom)}">+</button>
+          <button type="button" data-qty-delta="1" data-key="${esc(item.key)}" class="px-3 py-1 text-sm hover:bg-[#2C2A29] hover:text-[#FDFBF7] transition-colors" aria-label="Ajouter un ${esc(articleLabel(item))}">+</button>
         </div>
         <div class="text-right shrink-0 w-24">
           <p class="font-serif text-lg text-[#2C2A29]">${formatPrice(item.prix * item.quantity)}</p>
-          <button type="button" data-remove-id="${esc(item.id)}" class="text-[10px] uppercase tracking-[0.15em] text-[#7F7973] hover:text-[#2C2A29] underline">Retirer</button>
+          <button type="button" data-remove-key="${esc(item.key)}" class="text-[10px] uppercase tracking-[0.15em] text-[#7F7973] hover:text-[#2C2A29] underline">Retirer</button>
         </div>
       </div>`;
     })
@@ -249,11 +258,11 @@ function renderCartDates() {
         <div class="space-y-1.5">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="min-w-0 flex-1">
-              <p class="font-serif text-lg truncate">${esc(item.nom)} <span class="text-xs text-[#7F7973]">&times; ${item.quantity}</span></p>
+              <p class="font-serif text-lg truncate">${esc(articleLabel(item))} <span class="text-xs text-[#7F7973]">&times; ${item.quantity}</span></p>
               <p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">${hint}</p>
             </div>
-            <input type="date" data-date-id="${esc(item.id)}" min="${w.min}" ${w.max ? `max="${w.max}"` : ""} value="${esc(item.date)}"
-              aria-label="Date souhaitée pour ${esc(item.nom)}"
+            <input type="date" data-date-key="${esc(item.key)}" min="${w.min}" ${w.max ? `max="${w.max}"` : ""} value="${esc(item.date)}"
+              aria-label="Date souhaitée pour ${esc(articleLabel(item))}"
               class="px-3.5 py-2.5 text-sm border ${border} bg-[#FDFBF7] focus:outline-none focus:border-[#2C2A29]" />
           </div>
           ${seasonal ? `<p class="text-[11px] text-[#7F7973]">${isPreorder(live) ? "Précommande : r" : "R"}etrait possible du ${esc(formatDateFR(w.min, false))} au ${esc(formatDateFR(w.max))}.</p>` : ""}
@@ -266,23 +275,23 @@ function renderCartDates() {
 
 cartItemsList.addEventListener("click", (e) => {
   const qty = e.target.closest("button[data-qty-delta]");
-  const rm = e.target.closest("button[data-remove-id]");
+  const rm = e.target.closest("button[data-remove-key]");
   if (qty) {
-    const item = state.cart.find((i) => i.id === qty.dataset.id);
+    const item = state.cart.find((i) => i.key === qty.dataset.key);
     if (!item) return;
     item.quantity += Number(qty.dataset.qtyDelta);
-    if (item.quantity <= 0) state.cart = removeItem(state.cart, item.id);
+    if (item.quantity <= 0) state.cart = removeItem(state.cart, item.key);
   } else if (rm) {
-    state.cart = removeItem(state.cart, rm.dataset.removeId);
+    state.cart = removeItem(state.cart, rm.dataset.removeKey);
   } else return;
   syncCartStorage();
   renderCart();
 });
 
 cartDatesList.addEventListener("change", (e) => {
-  const input = e.target.closest("input[data-date-id]");
+  const input = e.target.closest("input[data-date-key]");
   if (!input) return;
-  setItemDate(state.cart, input.dataset.dateId, input.value);
+  setItemDate(state.cart, input.dataset.dateKey, input.value);
   dropInheritedDatesOutOfSeason();
   syncCartStorage();
   renderCartDates();
@@ -355,6 +364,7 @@ $("submit-order-btn").addEventListener("click", async () => {
 
   const articles = state.cart.map((i) => ({
     id: i.id, nom: i.nom, prix: i.prix, quantity: i.quantity, dateRetrait: i.date,
+    ...(i.parfum ? { parfum: i.parfum } : {}),
     ...(isPreorder(liveOf(i) || {}) ? { precommande: true } : {})
   }));
   const dates = [...new Set(articles.map((a) => a.dateRetrait))].sort();

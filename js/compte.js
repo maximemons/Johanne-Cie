@@ -2,7 +2,7 @@
 import { $, showToast, catalog, subscribeCatalog } from "./shop-common.js";
 import { mountNotifOptIn } from "./web-notify.js";
 import {
-  esc, formatPrice, formatDateFR, normalizeOrderStatut, canClientCancel, productUrl, isPartiallyDelivered
+  esc, formatPrice, formatDateFR, normalizeOrderStatut, canClientCancel, productUrl, isPartiallyDelivered, articleLabel
 } from "./catalog.js";
 import { mountAuthGate, watchUser, logout } from "./auth-ui.js";
 import {
@@ -109,7 +109,7 @@ function renderOrders() {
     const partial = isPartiallyDelivered(o) && statut !== "Retirée";
     const lines = (o.articles || []).map((a) => `
       <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-        <span>${a.quantity} &times; <a href="${productUrl(a.id)}" class="hover:underline underline-offset-4">${esc(a.nom)}</a> <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${partial && a.remis ? ` <span class="text-[10px] uppercase tracking-[0.12em] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 ml-1">Retiré${a.remisLe ? ` le ${esc(new Date(a.remisLe).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }))}` : ""}</span>` : ""}</span>
+        <span>${a.quantity} &times; <a href="${productUrl(a.id)}" class="hover:underline underline-offset-4">${esc(articleLabel(a))}</a> <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${partial && a.remis ? ` <span class="text-[10px] uppercase tracking-[0.12em] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 ml-1">Retiré${a.remisLe ? ` le ${esc(new Date(a.remisLe).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }))}` : ""}</span>` : ""}</span>
         <span class="text-[#7F7973]">${esc(formatDateFR(a.dateRetrait || o.dateRetrait))}</span>
       </li>`).join("");
     const lockedMsg = !canClientCancel(o) && (["En préparation", "Prête", "Retrait partiel"].includes(statut) || partial)

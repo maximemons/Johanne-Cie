@@ -3,12 +3,14 @@ import { loadCart, addItem } from "./cart.js";
 import {
   esc, formatPrice, getAvailability, groupByCategory, seasonLabel,
   productUrl, formatParts, isPieces, formatPrixPour, shopGroups, isOrderable, isPreorder, preorderLabel,
-  productTags, allTags, hasTag, tagKey
+  productTags, allTags, hasTag, tagKey,
+  productParfums, findParfum, formatDisplayPrice
 } from "./catalog.js";
 import { getFavorites, toggleFavorite, onFavoritesChange, heartButton } from "./favorites.js";
 
 const state = {
   activeCategory: null,   // catégorie en cours (scrollspy)
+  parfums: {},            // parfum choisi sur chaque carte : { [idPâtisserie]: nom }
   tag: "",                // tag choisi dans le filtre ("" = toute la carte)
   tagFilterOn: true       // liste « Filtrer par tag » affichée (réglage admin, parametres/boutique)
 };
@@ -180,8 +182,12 @@ function productCard(p, catLabel) {
   const parts = formatParts(p.parts, isPieces(p));
   const pour = formatPrixPour(p.prixPour);
   const tags = productTags(p);
-  const img = p.imageUrl
-    ? `<img src="${esc(p.imageUrl)}" alt="${esc(p.nom)}" class="w-full h-full object-cover ${blocked ? "grayscale opacity-75" : ""}" loading="lazy" />`
+  const parfums = productParfums(p);
+  const chosen = state.parfums[p.id] && findParfum(p, state.parfums[p.id]) ? state.parfums[p.id] : "";
+  const link = `${productUrl(p.id)}${chosen ? `&parfum=${encodeURIComponent(chosen)}` : ""}`;
+  const cardImage = (chosen && findParfum(p, chosen).image) || p.imageUrl;
+  const img = cardImage
+    ? `<img src="${esc(cardImage)}" data-card-img alt="${esc(p.nom)}" class="w-full h-full object-cover ${blocked ? "grayscale opacity-75" : ""}" loading="lazy" />`
     : `<img src="assets/logo.svg" alt="Maison Johanne &amp; Cie" class="w-full h-full object-contain p-6 bg-[#FDFBF7] opacity-80" />`;
   const stateBadge = blocked
     ? `<span class="absolute top-3 right-3 bg-[#2C2A29] text-[#FDFBF7] px-3 py-1 text-[10px] uppercase tracking-[0.2em]">${esc(av.reason)}</span>`
@@ -200,16 +206,16 @@ function productCard(p, catLabel) {
     <article class="row-card product-card border border-[#2C2A29]/15 bg-white flex flex-col justify-between">
       <div>
         <div class="relative">
-          <a href="${productUrl(p.id)}" class="block relative aspect-[4/3] overflow-hidden border-b border-[#2C2A29]/10 bg-[#F4F0E8]" aria-label="Voir ${esc(p.nom)}">${img}${badge}</a>
+          <a href="${link}" class="block relative aspect-[4/3] overflow-hidden border-b border-[#2C2A29]/10 bg-[#F4F0E8]" aria-label="Voir ${esc(p.nom)}">${img}${badge}</a>
           ${heartButton(p.id, p.nom, "absolute bottom-3 right-3")}
         </div>
         ${parts ? `<p class="px-6 pt-3 text-[10px] uppercase tracking-[0.22em] text-[#2C2A29]">${esc(parts)}</p>` : ""}
         <div class="${parts ? "px-6 pb-6 pt-2" : "p-6"} space-y-2">
           <p class="text-[10px] uppercase tracking-[0.22em] text-[#7F7973]">${esc(catLabel)}</p>
           <div class="flex items-baseline justify-between gap-3">
-            <h2 class="font-serif text-2xl text-[#2C2A29] leading-snug"><a href="${productUrl(p.id)}" class="hover:underline underline-offset-4">${esc(p.nom || "Pâtisserie")}</a></h2>
+            <h2 class="font-serif text-2xl text-[#2C2A29] leading-snug"><a href="${link}" class="hover:underline underline-offset-4">${esc(p.nom || "Pâtisserie")}</a></h2>
             <div class="shrink-0 text-right">
-              <span class="font-serif text-lg text-[#2C2A29]">${formatPrice(p.prix)}</span>
+              <span data-card-price class="font-serif text-lg text-[#2C2A29] whitespace-nowrap">${formatDisplayPrice(p, chosen)}</span>
               ${pour ? `<span class="block text-[10px] uppercase tracking-[0.15em] text-[#7F7973] whitespace-nowrap">Pour ${esc(pour)}</span>` : ""}
             </div>
           </div>
@@ -220,11 +226,23 @@ function productCard(p, catLabel) {
             return `<li><button type="button" data-tag="${esc(t)}" aria-pressed="${on ? "true" : "false"}" title="${on ? "Voir toute la carte" : `Voir les pâtisseries « ${esc(t)} »`}" class="tag-chip${on ? " is-on" : ""}">${esc(t)}</button></li>`;
           }).join("")}</ul>` : ""}
           ${p.description ? `<p class="text-xs text-[#7F7973] leading-relaxed pt-1">${esc(p.description)}</p>` : ""}
-          <a href="${productUrl(p.id)}" class="inline-block pt-1 text-[10px] uppercase tracking-[0.2em] text-[#2C2A29] underline underline-offset-4">Voir le détail &rarr;</a>
+          <a href="${link}" class="inline-block pt-1 text-[10px] uppercase tracking-[0.2em] text-[#2C2A29] underline underline-offset-4">Voir le détail &rarr;</a>
         </div>
       </div>
-      <div class="px-6 pb-6 pt-2">${action}</div>
+      <div class="px-6 pb-6 pt-2 space-y-2">${!blocked && parfums.length ? parfumSelect(p, parfums, chosen) : ""}${action}</div>
     </article>`;
+}
+
+/** Liste déroulante des parfums d'une carte (chaque option indique son prix). */
+function parfumSelect(p, parfums, chosen) {
+  return `
+    <label class="block">
+      <span class="sr-only">Parfum de ${esc(p.nom)}</span>
+      <select data-parfum-for="${esc(p.id)}" class="tag-select parfum-select w-full max-w-none${chosen ? " is-on" : ""}">
+        <option value="" ${chosen ? "" : "selected"} disabled>Choisir un parfum</option>
+        ${parfums.map((x) => `<option value="${esc(x.nom)}" ${x.nom === chosen ? "selected" : ""} ${x.dispo ? "" : "disabled"}>${esc(x.nom)} — ${formatPrice(x.prix)}${x.dispo ? "" : " (épuisé)"}</option>`).join("")}
+      </select>
+    </label>`;
 }
 
 // Un bloc par catégorie ("Autre" toujours en dernier) : cartes de même taille, qui passent à la ligne, centrées
@@ -265,14 +283,53 @@ productsGrid.addEventListener("click", (e) => {
   else if (fav) showToast(toggleFavorite(fav.dataset.favId) ? "Ajouté aux favoris" : "Retiré des favoris");
 });
 
+// Choix d'un parfum sur une carte : le prix et la photo de toutes les cartes de cette pâtisserie suivent
+// (une même pâtisserie peut apparaître deux fois : Favoris / Best-Sellers + sa catégorie)
+productsGrid.addEventListener("change", (e) => {
+  const sel = e.target.closest("select[data-parfum-for]");
+  if (!sel) return;
+  const id = sel.dataset.parfumFor;
+  const product = catalog.products.find((p) => p.id === id);
+  if (!product) return;
+  state.parfums[id] = sel.value;
+  const parfum = findParfum(product, sel.value);
+  productsGrid.querySelectorAll(`select[data-parfum-for="${CSS.escape(id)}"]`).forEach((other) => {
+    other.value = sel.value;
+    other.classList.add("is-on");
+    other.classList.remove("parfum-missing");
+    const card = other.closest("article");
+    card.querySelector("[data-card-price]").textContent = formatDisplayPrice(product, sel.value);
+    card.querySelectorAll(`a[href^="produit.html"]`).forEach((a) => {
+      a.href = `${productUrl(id)}${sel.value ? `&parfum=${encodeURIComponent(sel.value)}` : ""}`;
+    });
+    const img = card.querySelector("img[data-card-img]");
+    const src = parfum?.image || product.imageUrl;
+    if (img && src && img.getAttribute("src") !== src) img.src = src;
+  });
+});
+
 function addToCart(productId, qty = 1) {
   const product = catalog.products.find((p) => p.id === productId);
   if (!product) return;
   if (!isOrderable(product)) return showToast(`Indisponible (${getAvailability(product).reason})`);
+  let parfum = "";
+  if (productParfums(product).length) {
+    parfum = state.parfums[productId] || "";
+    const found = parfum && findParfum(product, parfum);
+    if (!found || !found.dispo) {
+      const sel = productsGrid.querySelector(`select[data-parfum-for="${CSS.escape(productId)}"]`);
+      sel?.focus();
+      sel?.classList.add("parfum-missing");
+      setTimeout(() => sel?.classList.remove("parfum-missing"), 1500);
+      return showToast("Choisissez d'abord un parfum");
+    }
+    parfum = found.nom;
+  }
   const cart = loadCart();
-  addItem(cart, product, qty);
+  addItem(cart, product, qty, parfum);
   saveCart(cart);
-  showToast(isPreorder(product) ? `Précommande ajoutée : ${preorderLabel(product).replace("Précommande dès", "retrait dès")}` : "Ajouté au panier");
+  const what = parfum ? ` (${parfum})` : "";
+  showToast(isPreorder(product) ? `Précommande ajoutée${what} : ${preorderLabel(product).replace("Précommande dès", "retrait dès")}` : `Ajouté au panier${what}`);
 }
 
 // Favoris modifiés (ici, dans un autre onglet ou depuis le compte) : la catégorie « Favoris » suit

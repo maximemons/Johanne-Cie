@@ -3,7 +3,8 @@ import {
   ADMIN_EMAIL, EMAIL_LINK_KEY, ALLERGENES, BEST_ID, AUTRE_ID, AUTRE_LABEL, MOIS, ORDER_STATUTS,
   esc, formatPrice, formatDateFR, todayISO, tomorrowISO, catName, isCategoryActive,
   groupByCategory, normalizeStatut, hasSeason, seasonLabel, isInSeason, formatPrixPour,
-  normalizeOrderStatut, isOrderOpen, normalizeShopSettings, cleanTag, tagKey, productTags, allTags
+  normalizeOrderStatut, isOrderOpen, normalizeShopSettings, cleanTag, tagKey, productTags, allTags,
+  productParfums, cleanParfumName, parfumKey, articleLabel, formatDisplayPrice, PARFUM_MAX_LENGTH
 } from "./catalog.js";
 import {
   currentCost, sortHistory, upsertEntry, removeEntry, marginOf, lastChange, pctChange,
@@ -188,7 +189,7 @@ function alertAdmin(changes) {
   }
   for (const { order, now } of events) {
     const annulee = now === "Annulée";
-    const articles = (order.articles || []).map((a) => `${a.quantity} × ${a.nom}`).join(", ");
+    const articles = (order.articles || []).map((a) => `${a.quantity} × ${articleLabel(a)}`).join(", ");
     showAlert(annulee ? `Commande annulée #${orderNumber(order)}` : `Nouvelle commande #${orderNumber(order)}`, {
       body: `${order.userEmail || "Client"} — ${formatPrice(order.total || 0)}${articles ? `\n${articles}` : ""}`,
       url: ADMIN_URL,
@@ -313,7 +314,7 @@ function renderByOrder() {
     const nRemis = remisCount(o), nArt = (o.articles || []).length;
     const lines = orderArticles(o).map((a, i) => `
       <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 ${a.remis ? "opacity-60" : ""}">
-        <span>${a.quantity} &times; ${a.remis ? `<s>${esc(a.nom)}</s>` : esc(a.nom)} <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${a.precommande ? ` <span class="text-[10px] uppercase tracking-[0.12em] border border-[#2C2A29]/30 px-1.5 py-0.5 ml-1">Précommande</span>` : ""}${a.remis ? ` <span class="text-[10px] uppercase tracking-[0.12em] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 ml-1">Remis${a.remisLe ? ` le ${esc(fmtIso(a.remisLe))}` : ""}</span>` : ""}</span>
+        <span>${a.quantity} &times; ${a.remis ? `<s>${esc(articleLabel(a))}</s>` : esc(articleLabel(a))} <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${a.precommande ? ` <span class="text-[10px] uppercase tracking-[0.12em] border border-[#2C2A29]/30 px-1.5 py-0.5 ml-1">Précommande</span>` : ""}${a.remis ? ` <span class="text-[10px] uppercase tracking-[0.12em] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 ml-1">Remis${a.remisLe ? ` le ${esc(fmtIso(a.remisLe))}` : ""}</span>` : ""}</span>
         <span class="flex items-baseline gap-3">
           <span class="text-[#2C2A29] font-medium">${esc(formatDateFR(a.date))}</span>
           ${canRemit ? `<button type="button" data-action="article-remis" data-id="${esc(o.id)}" data-idx="${i}" class="text-[10px] uppercase tracking-[0.15em] underline ${a.remis ? "text-[#7F7973]" : "text-[#2C2A29]"}">${a.remis ? "Annuler la remise" : "Marquer remis"}</button>` : ""}
@@ -422,15 +423,15 @@ function renderPickupModal() {
     if (a.remis) {
       return `
         <li class="flex items-start gap-3 p-3 opacity-60">
-          <input type="checkbox" checked disabled class="mt-0.5 accent-[#2C2A29]" aria-label="${esc(a.nom)} : déjà retiré" />
-          <span class="flex-1">${a.quantity} &times; ${esc(a.nom)}<span class="block text-[11px] text-[#7F7973]">Déjà retiré${a.remisLe ? ` le ${esc(fmtIso(a.remisLe))}` : ""}</span></span>
+          <input type="checkbox" checked disabled class="mt-0.5 accent-[#2C2A29]" aria-label="${esc(articleLabel(a))} : déjà retiré" />
+          <span class="flex-1">${a.quantity} &times; ${esc(articleLabel(a))}<span class="block text-[11px] text-[#7F7973]">Déjà retiré${a.remisLe ? ` le ${esc(fmtIso(a.remisLe))}` : ""}</span></span>
         </li>`;
     }
     return `
       <li>
         <label class="flex items-start gap-3 p-3 cursor-pointer hover:bg-[#FDFBF7]">
           <input type="checkbox" data-action="pickup-check" data-idx="${i}" ${pickup.checked.has(i) ? "checked" : ""} class="mt-0.5 accent-[#2C2A29]" />
-          <span class="flex-1">${a.quantity} &times; ${esc(a.nom)}${a.precommande ? ` <span class="text-[10px] uppercase tracking-[0.12em] border border-[#2C2A29]/30 px-1.5 py-0.5 ml-1">Précommande</span>` : ""}
+          <span class="flex-1">${a.quantity} &times; ${esc(articleLabel(a))}${a.precommande ? ` <span class="text-[10px] uppercase tracking-[0.12em] border border-[#2C2A29]/30 px-1.5 py-0.5 ml-1">Précommande</span>` : ""}
             <span class="block text-[11px] text-[#7F7973]">Retrait prévu ${esc(formatDateFR(a.date))}</span></span>
           ${tag ? `<span class="text-[10px] uppercase tracking-[0.12em] px-1.5 py-0.5 border ${tag === "En retard" ? "bg-red-50 text-red-800 border-red-200" : "bg-[#2C2A29] text-[#FDFBF7] border-[#2C2A29]"}">${tag}</span>` : ""}
         </label>
@@ -500,7 +501,7 @@ function toggleArticleRemis(id, idx) {
   else { a.remis = true; a.remisLe = new Date().toISOString(); }
   const n = articles.filter((x) => x.remis).length;
   const upd = { articles, retraitPartiel: n > 0 && n < articles.length };
-  let msg = a.remis ? `« ${a.nom} » remis` : `Remise de « ${a.nom} » annulée`;
+  let msg = a.remis ? `« ${articleLabel(a)} » remis` : `Remise de « ${articleLabel(a)} » annulée`;
   if (n === articles.length) {
     upd.statut = "Retirée";
     upd.retireeLe = serverTimestamp();
@@ -578,7 +579,9 @@ function renderByDay() {
   return keys.map((date) => {
     const lines = days.get(date);
     const totals = new Map();
-    lines.forEach((l) => totals.set(l.nom, (totals.get(l.nom) || 0) + l.quantity));
+    // une ligne par recette ET par parfum (« Bûche roulée — Praliné »), triées pour que les parfums d'une recette se suivent
+    lines.forEach((l) => totals.set(articleLabel(l), (totals.get(articleLabel(l)) || 0) + l.quantity));
+    const sortedTotals = [...totals].sort((a, b) => a[0].localeCompare(b[0], "fr"));
     const tag = !date ? "" : date < today ? "En retard" : date === today ? "Aujourd'hui" : date === tomorrow ? "Demain" : "";
     const tagCls = date && date < today ? "bg-red-50 text-red-800 border-red-200" : "bg-[#2C2A29] text-[#FDFBF7] border-[#2C2A29]";
 
@@ -590,10 +593,10 @@ function renderByDay() {
         </div>
         <div>
           <p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973] mb-1">À préparer</p>
-          <p class="text-sm">${[...totals].map(([n, q]) => `<strong>${q}&times;</strong> ${esc(n)}`).join(" &nbsp;&bull;&nbsp; ")}</p>
+          <p class="text-sm">${sortedTotals.map(([n, q]) => `<strong>${q}&times;</strong> ${esc(n)}`).join(" &nbsp;&bull;&nbsp; ")}</p>
         </div>
         <ul class="text-xs space-y-1 text-[#7F7973]">
-          ${lines.map((l) => `<li>${l.quantity} &times; ${esc(l.nom)} &mdash; #${esc(shortId(l.order))} &middot; ${esc(l.order.userEmail || "Client")} &middot; <em>${esc(statutOf(l.order))}</em></li>`).join("")}
+          ${lines.map((l) => `<li>${l.quantity} &times; ${esc(articleLabel(l))} &mdash; #${esc(shortId(l.order))} &middot; ${esc(l.order.userEmail || "Client")} &middot; <em>${esc(statutOf(l.order))}</em></li>`).join("")}
         </ul>
       </article>`;
   }).join("");
@@ -673,6 +676,128 @@ $("prod-tag-existing").addEventListener("click", (e) => {
   if (b) addFormTags(b.dataset.addTag);
 });
 
+// ---------- Parfums du formulaire ----------
+// Lignes éditées : { nom, prix, image, dispo } (prix "" = prix de la pâtisserie)
+let formParfums = [];
+
+/** Relit les champs (la saisie n'est pas redessinée à chaque frappe). */
+function readFormParfums() {
+  document.querySelectorAll("#prod-parfums [data-parfum-row]").forEach((row) => {
+    const i = Number(row.dataset.parfumRow);
+    if (!formParfums[i]) return;
+    formParfums[i] = {
+      nom: row.querySelector("[data-pf='nom']").value,
+      prix: row.querySelector("[data-pf='prix']").value.trim(),
+      image: row.querySelector("[data-pf='image']").value.trim(),
+      dispo: row.querySelector("[data-pf='dispo']").checked
+    };
+  });
+}
+
+/** Noms de parfums déjà utilisés sur d'autres pâtisseries (une graphie par parfum). */
+function knownParfumNames() {
+  const byKey = new Map();
+  state.products.forEach((p) => productParfums(p).forEach((x) => { if (!byKey.has(parfumKey(x.nom))) byKey.set(parfumKey(x.nom), x.nom); }));
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+}
+
+function renderFormParfums() {
+  const box = $("prod-parfums");
+  box.innerHTML = formParfums.length
+    ? formParfums.map((x, i) => `
+      <div data-parfum-row="${i}" class="border border-[#2C2A29]/15 bg-white p-3 flex gap-3">
+        <div class="w-16 h-16 shrink-0 bg-[#F4F0E8] border border-[#2C2A29]/10 overflow-hidden">
+          <img data-pf-preview src="${esc(/^https?:\/\//i.test(x.image) ? x.image : "assets/logo.svg")}" alt="" class="w-full h-full ${/^https?:\/\//i.test(x.image) ? "object-cover" : "object-contain p-1 opacity-60"}" />
+        </div>
+        <div class="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-6 gap-2">
+          <div class="sm:col-span-3"><label class="lbl" for="pf-nom-${i}">Parfum</label><input id="pf-nom-${i}" data-pf="nom" type="text" maxlength="${PARFUM_MAX_LENGTH}" value="${esc(x.nom)}" placeholder="Ex : Praliné" class="inp" /></div>
+          <div class="sm:col-span-2"><label class="lbl" for="pf-prix-${i}">Prix (&euro;)</label><input id="pf-prix-${i}" data-pf="prix" type="number" step="0.01" min="0" value="${esc(x.prix)}" placeholder="${esc($("prod-prix").value || "Prix de base")}" class="inp" /></div>
+          <label class="sm:col-span-1 flex items-center gap-2 text-xs sm:pt-6"><input data-pf="dispo" type="checkbox" ${x.dispo ? "checked" : ""} class="accent-[#2C2A29]" /> Disponible</label>
+          <div class="sm:col-span-6"><label class="lbl" for="pf-image-${i}">Image du parfum (URL, optionnel)</label><input id="pf-image-${i}" data-pf="image" type="url" value="${esc(x.image)}" placeholder="https://..." class="inp" /></div>
+        </div>
+        <div class="flex flex-col gap-1 shrink-0">
+          <button type="button" data-pf-up="${i}" ${i === 0 ? "disabled" : ""} aria-label="Monter ${esc(x.nom || "ce parfum")}" class="w-8 h-8 border border-[#2C2A29]/30 hover:border-[#2C2A29] disabled:opacity-30">&uarr;</button>
+          <button type="button" data-pf-down="${i}" ${i === formParfums.length - 1 ? "disabled" : ""} aria-label="Descendre ${esc(x.nom || "ce parfum")}" class="w-8 h-8 border border-[#2C2A29]/30 hover:border-[#2C2A29] disabled:opacity-30">&darr;</button>
+          <button type="button" data-pf-remove="${i}" aria-label="Retirer ${esc(x.nom || "ce parfum")}" class="w-8 h-8 border border-red-300 text-red-700 hover:bg-red-700 hover:text-white">&times;</button>
+        </div>
+      </div>`).join("")
+    : `<p class="text-xs text-[#7F7973]">Aucun parfum : pas de choix proposé au client.</p>`;
+
+  renderParfumSuggestions();
+}
+
+/** Boutons « Déjà utilisés » (mis à jour sans redessiner la saisie en cours). */
+function renderParfumSuggestions() {
+  readFormParfums();
+  const used = new Set(formParfums.map((x) => parfumKey(x.nom)));
+  const unused = knownParfumNames().filter((n) => !used.has(parfumKey(n)));
+  $("prod-parfum-existing").innerHTML = unused.length
+    ? `<span class="text-[#7F7973] mr-1">Déjà utilisés :</span>` + unused.map((n) =>
+        `<button type="button" data-add-parfum="${esc(n)}" class="px-2 py-0.5 border border-dashed border-[#2C2A29]/30 hover:border-[#2C2A29]">+ ${esc(n)}</button>`).join("")
+    : "";
+}
+
+function addFormParfum(nom = "") {
+  readFormParfums();
+  formParfums.push({ nom, prix: "", image: "", dispo: true });
+  renderFormParfums();
+  const inputs = document.querySelectorAll("#prod-parfums [data-pf='" + (nom ? "prix" : "nom") + "']");
+  inputs[inputs.length - 1]?.focus();
+}
+
+renderFormParfums();
+$("prod-parfum-add").addEventListener("click", () => addFormParfum());
+$("prod-parfum-existing").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-add-parfum]");
+  if (b) addFormParfum(b.dataset.addParfum);
+});
+$("prod-parfums").addEventListener("click", (e) => {
+  const up = e.target.closest("button[data-pf-up]");
+  const down = e.target.closest("button[data-pf-down]");
+  const rm = e.target.closest("button[data-pf-remove]");
+  if (!up && !down && !rm) return;
+  readFormParfums();
+  if (rm) formParfums.splice(Number(rm.dataset.pfRemove), 1);
+  else {
+    const i = Number((up || down).dataset[up ? "pfUp" : "pfDown"]);
+    const j = up ? i - 1 : i + 1;
+    if (j < 0 || j >= formParfums.length) return;
+    [formParfums[i], formParfums[j]] = [formParfums[j], formParfums[i]];
+  }
+  renderFormParfums();
+});
+// Aperçu de l'image dès que l'URL est saisie
+$("prod-parfums").addEventListener("input", (e) => {
+  const inp = e.target.closest("[data-pf='image']");
+  if (!inp) return;
+  const img = inp.closest("[data-parfum-row]").querySelector("img[data-pf-preview]");
+  const ok = /^https?:\/\//i.test(inp.value.trim());
+  img.src = ok ? inp.value.trim() : "assets/logo.svg";
+  img.className = `w-full h-full ${ok ? "object-cover" : "object-contain p-1 opacity-60"}`;
+});
+// Le prix de base sert d'indication dans les prix de parfum laissés vides
+$("prod-prix").addEventListener("input", () => {
+  document.querySelectorAll("#prod-parfums [data-pf='prix']").forEach((i) => { i.placeholder = $("prod-prix").value || "Prix de base"; });
+});
+
+/** Parfums à enregistrer, ou { error } si la saisie est incomplète. */
+function collectFormParfums() {
+  readFormParfums();
+  const out = [], seen = new Set();
+  for (const x of formParfums) {
+    const nom = cleanParfumName(x.nom);
+    if (!nom && !x.prix && !x.image) continue; // ligne laissée vide
+    if (!nom) return { error: "Chaque parfum doit avoir un nom" };
+    if (seen.has(parfumKey(nom))) return { error: `Parfum en double : « ${nom} »` };
+    seen.add(parfumKey(nom));
+    const prix = x.prix === "" ? null : Number(x.prix);
+    if (prix !== null && !(prix >= 0)) return { error: `Prix invalide pour « ${nom} »` };
+    if (x.image && !/^https?:\/\//i.test(x.image)) return { error: `Image invalide pour « ${nom} » (URL https://…)` };
+    out.push({ nom, prix, image: x.image || "", dispo: x.dispo !== false });
+  }
+  return { parfums: out };
+}
+
 const parseUrlLines = (txt) => [...new Set(txt.split(/\s*\n\s*/).map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u)))];
 
 $("prod-saison-debut").innerHTML = monthOptions(1);
@@ -700,6 +825,7 @@ function renderProductForm() {
       .map((g) => `<option value="${esc(g.id)}">${esc(g.nom)}</option>`).join("");
   f.value = fcur;
   renderFormTags();
+  renderParfumSuggestions();
 }
 
 // Proposition de prix dès la saisie du prix de revient (création ou modification) :
@@ -728,6 +854,8 @@ function resetProductForm() {
   productForm.reset();
   formTags = [];
   renderFormTags();
+  formParfums = [];
+  renderFormParfums();
   $("prod-edit-id").value = "";
   $("prod-saison-range").classList.add("hidden");
   $("product-form-title").textContent = "Ajouter une pâtisserie";
@@ -742,6 +870,11 @@ productForm.addEventListener("submit", (e) => {
   // La proposition de prix (ouverte par la saisie du revient) doit être tranchée avant d'enregistrer
   if (!$("price-modal").classList.contains("hidden")) return;
   const id = $("prod-edit-id").value;
+  const pf = collectFormParfums();
+  if (pf.error) {
+    $("prod-parfums").scrollIntoView({ behavior: "smooth", block: "center" });
+    return toast(pf.error);
+  }
   const periode = $("prod-saison-mode").value === "periode";
   const pourNombre = parseInt($("prod-pour-nombre").value, 10);
   const pourMax = parseInt($("prod-pour-max").value, 10);
@@ -763,7 +896,8 @@ productForm.addEventListener("submit", (e) => {
     parts: $("prod-parts").value.trim(),
     poids: $("prod-poids").value.trim(),
     allergenes: checkedAllergenes(),
-    tags: (addFormTags(tagInput.value), tagInput.value = "", [...formTags])
+    tags: (addFormTags(tagInput.value), tagInput.value = "", [...formTags]),
+    parfums: pf.parfums
   };
   const revientRaw = $("prod-revient").value.trim();
   const revient = revientRaw === "" ? null : Number(revientRaw);
@@ -838,7 +972,7 @@ function renderProducts() {
                 <span class="text-[11px] px-2 py-0.5 border ${chip}">${statut}</span>
               </span>
             </div>
-            <p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">${esc(g.nom)}${orphan ? " (catégorie retirée)" : ""} &bull; ${formatPrice(p.prix)}${formatPrixPour(p.prixPour) ? ` &bull; pour ${esc(formatPrixPour(p.prixPour))}` : ""}</p>
+            <p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973]">${esc(g.nom)}${orphan ? " (catégorie retirée)" : ""} &bull; ${formatDisplayPrice(p)}${formatPrixPour(p.prixPour) ? ` &bull; pour ${esc(formatPrixPour(p.prixPour))}` : ""}</p>
             ${(() => {
               const c = currentCost(state.couts[p.id]?.historique);
               const m = marginOf(p.prix, c);
@@ -846,6 +980,12 @@ function renderProducts() {
             })()}
             ${season ? `<p class="text-[11px] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
             ${productTags(p).length ? `<p class="flex flex-wrap gap-1 pt-0.5">${productTags(p).map((t) => `<span class="px-1.5 py-px border border-[#2C2A29]/20 text-[10px] text-[#2C2A29]">${esc(t)}</span>`).join("")}</p>` : ""}
+            ${productParfums(p).length ? `<div class="flex flex-wrap gap-1 pt-0.5" aria-label="Parfums (cliquer pour marquer épuisé / disponible)">${productParfums(p).map((x) => `
+              <button type="button" data-action="parfum-toggle" data-id="${esc(p.id)}" data-parfum="${esc(x.nom)}"
+                title="${x.dispo ? "Marquer ce parfum épuisé" : "Remettre ce parfum en stock"}"
+                class="inline-flex items-center gap-1 pl-0.5 pr-1.5 py-0.5 border text-[10px] ${x.dispo ? "border-[#2C2A29]/30 text-[#2C2A29] hover:border-[#2C2A29]" : "border-red-200 bg-red-50 text-red-800 line-through"}">
+                ${x.image ? `<img src="${esc(x.image)}" alt="" class="w-4 h-4 object-cover" loading="lazy" />` : `<span class="w-1"></span>`}${esc(x.nom)} &middot; ${formatPrice(x.prix)}
+              </button>`).join("")}</div>` : ""}
             ${autoOff ? `<p class="text-[11px] text-amber-800">Actuellement hors-saison : non commandable</p>` : ""}
           </div>
           <div class="flex flex-wrap gap-2">
@@ -880,6 +1020,10 @@ function editProduct(p) {
   formTags = productTags(p);
   tagInput.value = "";
   renderFormTags();
+  formParfums = (Array.isArray(p.parfums) ? p.parfums : []).map((x) => ({
+    nom: x?.nom || "", prix: x?.prix == null ? "" : String(x.prix), image: x?.image || "", dispo: x?.dispo !== false
+  }));
+  renderFormParfums();
   const seasonal = hasSeason(p.saison);
   $("prod-saison-mode").value = seasonal ? "periode" : "toujours";
   $("prod-saison-range").classList.toggle("hidden", !seasonal);
@@ -967,6 +1111,18 @@ document.addEventListener("click", (e) => {
     if (!p) return;
     const next = normalizeStatut(p.statut) === "Disponible" ? "Épuisé" : "Disponible";
     run(() => updateDoc(doc(db, "patisseries", id), { statut: next }), next === "Épuisé" ? "Marquée épuisée" : "Remise en stock");
+  } else if (action === "parfum-toggle") {
+    const p = state.products.find((x) => x.id === id);
+    if (!p || !Array.isArray(p.parfums)) return;
+    const k = parfumKey(el.dataset.parfum);
+    let nowDispo = true;
+    const parfums = p.parfums.map((x) => {
+      if (parfumKey(x?.nom) !== k) return x;
+      nowDispo = x?.dispo === false;
+      return { ...x, dispo: nowDispo };
+    });
+    run(() => updateDoc(doc(db, "patisseries", id), { parfums }),
+      `« ${el.dataset.parfum} » ${nowDispo ? "remis en stock" : "marqué épuisé"}`);
   } else if (action === "prod-best") {
     const p = state.products.find((x) => x.id === id);
     if (!p) return;

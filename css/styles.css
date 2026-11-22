@@ -94,3 +94,21 @@ button.tag-chip:hover { border-color: #2C2A29; }
 }
 .tag-select:hover { border-color: #2C2A29; }
 .tag-select.is-on { border-color: #2C2A29; }
+
+/* Parfums : liste déroulante des cartes, choix sur la fiche produit */
+.parfum-select { min-width: 0; font-size: 0.75rem; }
+.parfum-select.parfum-missing { border-color: #B91C1C; outline: 2px solid #B91C1C; outline-offset: 1px; }
+.parfum-choices.parfum-missing { outline: 2px solid #B91C1C; outline-offset: 4px; }
+.parfum-opt {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.45rem 0.75rem 0.45rem 0.45rem;
+  border: 1px solid rgba(44, 42, 41, 0.25);
+  background: #FDFBF7; color: #2C2A29;
+  font-size: 0.8125rem; text-align: left;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+.parfum-opt:hover:not(:disabled) { border-color: #2C2A29; }
+.parfum-opt[aria-pressed="true"] { background: #2C2A29; border-color: #2C2A29; color: #FDFBF7; }
+.parfum-opt:disabled { opacity: 0.5; cursor: not-allowed; }
+.parfum-opt:focus-visible { outline: 2px solid #2C2A29; outline-offset: 2px; }
+.parfum-opt img, .parfum-opt .parfum-dot { width: 2.25rem; height: 2.25rem; object-fit: cover; flex-shrink: 0; background: #F4F0E8; }

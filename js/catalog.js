@@ -126,7 +126,7 @@ export function isInSeason(saison, date = new Date()) {
 /** { available, reason } pour une pâtisserie, à une date donnée (par défaut aujourd'hui). */
 export function getAvailability(product, date = new Date()) {
   const statut = normalizeStatut(product.statut);
-  if (statut === "Épuisé") return { available: false, reason: "Épuisé" };
+  if (statut === "Épuisé" || allParfumsOut(product)) return { available: false, reason: "Épuisé" };
   if (statut === "Hors-Saison") return { available: false, reason: "Hors-Saison" };
   if (!isInSeason(product.saison, date)) return { available: false, reason: "Hors-Saison" };
   return { available: true, reason: null };
@@ -138,7 +138,13 @@ export function getAvailability(product, date = new Date()) {
  * hors de sa saison reste commandable en avance, pour une date située dans sa saison.
  */
 export function isOrderable(product) {
-  return normalizeStatut(product.statut) === "Disponible";
+  return normalizeStatut(product.statut) === "Disponible" && !allParfumsOut(product);
+}
+
+/** Recette à parfums dont aucun parfum n'est disponible : elle est épuisée. */
+function allParfumsOut(product) {
+  const list = Array.isArray(product?.parfums) ? product.parfums.filter((x) => String(x?.nom ?? "").trim()) : [];
+  return list.length > 0 && list.every((x) => x?.dispo === false);
 }
 
 /** Précommande : commandable, mais pas en saison aujourd'hui. */
@@ -299,3 +305,65 @@ export const DEFAULT_SHOP_SETTINGS = { filtreTags: true };
 export function normalizeShopSettings(d) {
   return { filtreTags: d?.filtreTags !== false };
 }
+
+// ---------- Parfums (choix proposé sur certaines recettes, chacun avec son tarif) ----------
+// Stockés sur la pâtisserie : parfums: [{ nom, prix, dispo, image }]. Liste vide ou absente = pas de choix.
+// `prix` est le prix de la pâtisserie dans ce parfum (à défaut, le prix de la pâtisserie).
+// `dispo: false` = parfum momentanément indisponible (affiché, mais non commandable).
+// `image` (URL, facultative) remplace la photo principale quand ce parfum est choisi.
+export const PARFUM_MAX_LENGTH = 40;
+export const cleanParfumName = (t) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, PARFUM_MAX_LENGTH);
+export const parfumKey = (t) => cleanParfumName(t).toLocaleLowerCase("fr");
+
+/** Parfums d'une pâtisserie, nettoyés et sans doublon (insensible à la casse). */
+export function productParfums(p) {
+  const seen = new Set();
+  const base = Number(p?.prix) || 0;
+  return (Array.isArray(p?.parfums) ? p.parfums : [])
+    .map((x) => {
+      const prix = Number(x?.prix);
+      const image = String(x?.image || "").trim();
+      return {
+        nom: cleanParfumName(x?.nom),
+        prix: x?.prix === "" || x?.prix == null || !(prix >= 0) ? base : prix,
+        dispo: x?.dispo !== false,
+        image: isUrl(image) ? image : ""
+      };
+    })
+    .filter((x) => {
+      const k = parfumKey(x.nom);
+      if (!x.nom || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+}
+
+export const hasParfums = (p) => productParfums(p).length > 0;
+export const availableParfums = (p) => productParfums(p).filter((x) => x.dispo);
+/** Le parfum `nom` de la pâtisserie (ou null s'il n'existe plus). */
+export const findParfum = (p, nom) => productParfums(p).find((x) => parfumKey(x.nom) === parfumKey(nom)) || null;
+
+/** Prix affiché : prix du parfum choisi, ou plus petit prix des parfums (« dès »), ou prix de la pâtisserie. */
+export function displayPrice(p, parfumNom = "") {
+  const chosen = parfumNom ? findParfum(p, parfumNom) : null;
+  if (chosen) return { prix: chosen.prix, from: false };
+  const list = availableParfums(p).length ? availableParfums(p) : productParfums(p);
+  if (!list.length) return { prix: Number(p?.prix) || 0, from: false };
+  const prices = list.map((x) => x.prix);
+  const min = Math.min(...prices);
+  return { prix: min, from: prices.some((v) => v !== min) };
+}
+export function formatDisplayPrice(p, parfumNom = "") {
+  const d = displayPrice(p, parfumNom);
+  return `${d.from ? "Dès " : ""}${formatPrice(d.prix)}`;
+}
+
+/** Images à montrer pour un parfum choisi : la sienne d'abord, puis celles de la pâtisserie. */
+export function imagesForParfum(p, parfumNom = "") {
+  const own = parfumNom ? findParfum(p, parfumNom)?.image : "";
+  const base = productImages(p);
+  return own ? [own, ...base.filter((u) => u !== own)] : base;
+}
+
+/** Libellé d'un article de panier / commande : « Bûche roulée — Praliné ». */
+export const articleLabel = (a) => `${a?.nom || ""}${a?.parfum ? ` — ${a.parfum}` : ""}`;
