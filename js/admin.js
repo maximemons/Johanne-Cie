@@ -27,6 +27,7 @@ const state = {
   categories: [],
   products: [],
   couts: {},          // prix de revient privés : { [idPâtisserie]: { historique: [...] } }
+  recettes: {},       // liens vers les recettes, privés : { [idPâtisserie]: { url } }
   costProduct: null,  // pâtisserie dont le détail est ouvert
   orders: [],
   tab: "commandes",
@@ -144,6 +145,16 @@ function startListeners() {
       (err) => { console.error(err); $("costs-error").classList.remove("hidden"); }
     ),
     onSnapshot(
+      collection(db, "recettes"),
+      (snap) => {
+        state.recettes = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+        $("recettes-error").classList.add("hidden");
+        renderProducts();
+        renderOrders();
+      },
+      (err) => { console.error(err); $("recettes-error").classList.remove("hidden"); }
+    ),
+    onSnapshot(
       collection(db, "commandes"),
       (snap) => {
         state.orders = snap.docs
@@ -220,6 +231,29 @@ window.addEventListener("hashchange", () => {
   const t = location.hash.slice(1);
   if (TABS.includes(t) && t !== state.tab) showTab(t);
 });
+
+// =============================================================
+// RECETTES (liens privés, collection « recettes » réservée à l'admin)
+// =============================================================
+/** Lien http(s) valide, sinon "" (refuse javascript:, data:… pour éviter toute injection). */
+function cleanRecipeUrl(raw) {
+  const v = String(raw || "").trim();
+  if (!v) return "";
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https://${v}`);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : "";
+  } catch { return ""; }
+}
+const recipeUrl = (id) => cleanRecipeUrl(state.recettes[id]?.url);
+/** Petit lien « Recette » (nouvel onglet), ou "" si la pâtisserie n'a pas de recette. */
+function recipeLink(id, cls = "") {
+  const url = id ? recipeUrl(id) : "";
+  return url
+    ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Ouvrir la recette dans un nouvel onglet" class="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.15em] underline text-[#2C2A29] hover:text-[#7F7973] ${cls}">Recette&nbsp;&#8599;</a>`
+    : "";
+}
+const writeRecipe = (id, url) =>
+  url ? setDoc(doc(db, "recettes", id), { url, updatedAt: serverTimestamp() }) : deleteDoc(doc(db, "recettes", id));
 
 // =============================================================
 // COMMANDES
@@ -316,6 +350,7 @@ function renderByOrder() {
       <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 ${a.remis ? "opacity-60" : ""}">
         <span>${a.quantity} &times; ${a.remis ? `<s>${esc(articleLabel(a))}</s>` : esc(articleLabel(a))} <span class="text-[#7F7973]">(${formatPrice(a.prix * a.quantity)})</span>${a.precommande ? ` <span class="text-[10px] uppercase tracking-[0.12em] border border-[#2C2A29]/30 px-1.5 py-0.5 ml-1">Précommande</span>` : ""}${a.remis ? ` <span class="text-[10px] uppercase tracking-[0.12em] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 ml-1">Remis${a.remisLe ? ` le ${esc(fmtIso(a.remisLe))}` : ""}</span>` : ""}</span>
         <span class="flex items-baseline gap-3">
+          ${recipeLink(a.id)}
           <span class="text-[#2C2A29] font-medium">${esc(formatDateFR(a.date))}</span>
           ${canRemit ? `<button type="button" data-action="article-remis" data-id="${esc(o.id)}" data-idx="${i}" class="text-[10px] uppercase tracking-[0.15em] underline ${a.remis ? "text-[#7F7973]" : "text-[#2C2A29]"}">${a.remis ? "Annuler la remise" : "Marquer remis"}</button>` : ""}
         </span>
@@ -580,7 +615,11 @@ function renderByDay() {
     const lines = days.get(date);
     const totals = new Map();
     // une ligne par recette ET par parfum (« Bûche roulée — Praliné »), triées pour que les parfums d'une recette se suivent
-    lines.forEach((l) => totals.set(articleLabel(l), (totals.get(articleLabel(l)) || 0) + l.quantity));
+    lines.forEach((l) => {
+      const t = totals.get(articleLabel(l)) || { q: 0, id: l.id };
+      t.q += l.quantity;
+      totals.set(articleLabel(l), t);
+    });
     const sortedTotals = [...totals].sort((a, b) => a[0].localeCompare(b[0], "fr"));
     const tag = !date ? "" : date < today ? "En retard" : date === today ? "Aujourd'hui" : date === tomorrow ? "Demain" : "";
     const tagCls = date && date < today ? "bg-red-50 text-red-800 border-red-200" : "bg-[#2C2A29] text-[#FDFBF7] border-[#2C2A29]";
@@ -593,7 +632,7 @@ function renderByDay() {
         </div>
         <div>
           <p class="text-[10px] uppercase tracking-[0.18em] text-[#7F7973] mb-1">À préparer</p>
-          <p class="text-sm">${sortedTotals.map(([n, q]) => `<strong>${q}&times;</strong> ${esc(n)}`).join(" &nbsp;&bull;&nbsp; ")}</p>
+          <p class="text-sm">${sortedTotals.map(([n, t]) => `<strong>${t.q}&times;</strong> ${esc(n)}${recipeLink(t.id, "ml-1")}`).join(" &nbsp;&bull;&nbsp; ")}</p>
         </div>
         <ul class="text-xs space-y-1 text-[#7F7973]">
           ${lines.map((l) => `<li>${l.quantity} &times; ${esc(articleLabel(l))} &mdash; #${esc(shortId(l.order))} &middot; ${esc(l.order.userEmail || "Client")} &middot; <em>${esc(statutOf(l.order))}</em></li>`).join("")}
@@ -909,11 +948,19 @@ productForm.addEventListener("submit", (e) => {
   const revientRaw = $("prod-revient").value.trim();
   const revient = revientRaw === "" ? null : Number(revientRaw);
   if (revient !== null && !(revient >= 0)) return toast("Prix de revient invalide");
+  const recetteRaw = $("prod-recette").value.trim();
+  const recette = cleanRecipeUrl(recetteRaw);
+  if (recetteRaw && !recette) {
+    $("prod-recette").focus();
+    return toast("Lien de recette invalide (adresse web http ou https attendue)");
+  }
   run(async () => {
     let pid = id;
     let offer = null;
     if (id) await updateDoc(doc(db, "patisseries", id), data);
     else pid = (await addDoc(collection(db, "patisseries"), { ...data, createdAt: serverTimestamp() })).id;
+    // Lien de recette : collection privée « recettes », jamais dans « patisseries » (lue par la boutique)
+    if (recette !== recipeUrl(pid) && (recette || state.recettes[pid])) await writeRecipe(pid, recette);
     // Un prix de revient modifié s'ajoute à l'historique (daté d'aujourd'hui)
     if (revient !== null && revient !== currentCost(state.couts[pid]?.historique)) {
       const { isCurrent } = await saveCost(pid, revient, todayISO());
@@ -994,6 +1041,7 @@ function renderProducts() {
               return c == null ? "" : `<p class="text-[11px] text-[#7F7973]">Revient ${formatPrice(c)}${m ? ` &bull; marge ${formatPct(m.pct)}` : ""}</p>`;
             })()}
             ${season ? `<p class="text-[11px] text-[#7F7973]">Saison : ${esc(season.toLowerCase())}</p>` : ""}
+            ${recipeLink(p.id) ? `<p>${recipeLink(p.id)}</p>` : ""}
             ${productTags(p).length ? `<p class="flex flex-wrap gap-1 pt-0.5">${productTags(p).map((t) => `<span class="px-1.5 py-px border border-[#2C2A29]/20 text-[10px] text-[#2C2A29]">${esc(t)}</span>`).join("")}</p>` : ""}
             ${productParfums(p).length ? `<div class="flex flex-wrap gap-1 pt-0.5" aria-label="Parfums (cliquer pour marquer épuisé / disponible)">${productParfums(p).map((x) => `
               <button type="button" data-action="parfum-toggle" data-id="${esc(p.id)}" data-parfum="${esc(x.nom)}"
@@ -1024,6 +1072,7 @@ function editProduct(p) {
   $("prod-statut").value = normalizeStatut(p.statut);
   $("prod-brouillon").checked = isDraft(p);
   $("prod-revient").value = currentCost(state.couts[p.id]?.historique) ?? "";
+  $("prod-recette").value = recipeUrl(p.id);
   $("prod-pour-nombre").value = p.prixPour?.nombre ?? "";
   $("prod-pour-max").value = p.prixPour?.nombreMax ?? "";
   $("prod-pour-unite").value = (p.prixPour?.unite || p.unite) === "pieces" ? "pieces" : "personnes";
@@ -1160,10 +1209,13 @@ document.addEventListener("click", (e) => {
   } else if (action === "prod-delete") {
     const p = state.products.find((x) => x.id === id);
     const hasCost = Boolean(state.couts[id]);
-    if (confirm(`Supprimer « ${p?.nom || "cette pâtisserie"} » ?${hasCost ? "\n\nSon historique de prix de revient sera aussi supprimé." : ""}`)) {
+    const hasRecipe = Boolean(state.recettes[id]);
+    const extras = [hasCost && "son historique de prix de revient", hasRecipe && "son lien de recette"].filter(Boolean).join(" et ");
+    if (confirm(`Supprimer « ${p?.nom || "cette pâtisserie"} » ?${extras ? `\n\n${extras[0].toUpperCase() + extras.slice(1)} ${hasCost && hasRecipe ? "seront" : "sera"} aussi supprimé${hasCost && hasRecipe ? "s" : ""}.` : ""}`)) {
       run(async () => {
         await deleteDoc(doc(db, "patisseries", id));
         if (hasCost) await deleteDoc(doc(db, "couts", id));
+        if (hasRecipe) await deleteDoc(doc(db, "recettes", id));
       }, "Pâtisserie supprimée", "Erreur lors de la suppression");
     }
   } else if (action === "price-apply") {

@@ -112,6 +112,12 @@
               <input type="number" step="0.01" min="0" id="prod-revient" placeholder="Ex : 14.50" class="inp" />
               <p class="text-xs text-[#7F7973] mt-1">Jamais visible des clients. Une modification est ajoutée à l'historique (onglet « Prix de revient »). Un prix de vente vous est proposé dès la saisie (réglage dans « Paramètres »).</p>
             </div>
+            <div class="sm:col-span-2">
+              <label class="lbl" for="prod-recette">Lien vers la recette &mdash; privé</label>
+              <input type="text" inputmode="url" spellcheck="false" id="prod-recette" placeholder="Ex : https://docs.google.com/…" class="inp" autocomplete="off" />
+              <p class="text-xs text-[#7F7973] mt-1">Jamais visible des clients. Affiché uniquement ici, dans la liste des pâtisseries et à côté des articles des commandes.</p>
+              <p id="recettes-error" class="hidden text-xs text-red-700 mt-1">Lecture des recettes refusée. Ajoutez la collection « recettes » aux règles Firestore (réservée à l'administrateur).</p>
+            </div>
             <div class="sm:col-span-2 border border-[#2C2A29]/15 p-4 space-y-3 bg-[#FDFBF7]">
               <span class="lbl">Le prix correspond à</span>
               <div class="grid grid-cols-3 gap-4">
