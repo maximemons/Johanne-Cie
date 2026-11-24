@@ -2,7 +2,7 @@
 import { $, showToast, catalog, subscribeCatalog } from "./shop-common.js";
 import { mountNotifOptIn } from "./web-notify.js";
 import {
-  esc, formatPrice, formatDateFR, normalizeOrderStatut, canClientCancel, productUrl, isPartiallyDelivered, articleLabel
+  ADMIN_EMAIL, esc, formatPrice, formatDateFR, normalizeOrderStatut, canClientCancel, productUrl, isPartiallyDelivered, articleLabel
 } from "./catalog.js";
 import { mountAuthGate, watchUser, logout } from "./auth-ui.js";
 import {
@@ -34,6 +34,9 @@ function render() {
   $("account-main").classList.toggle("hidden", !logged);
   if (!logged) return;
   $("account-email").textContent = state.user.email || state.user.displayName || "Client";
+  // Même règle d'accès que admin.js : e-mail administrateur vérifié
+  const isAdmin = state.user.email === ADMIN_EMAIL && state.user.emailVerified;
+  $("account-admin-link").classList.toggle("hidden", !isAdmin);
   renderLoyalty();
   renderOrders();
 }

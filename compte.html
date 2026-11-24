@@ -59,7 +59,11 @@
           <p class="text-[10px] uppercase tracking-[0.2em] text-[#7F7973]">Connecté</p>
           <p id="account-email" class="text-sm font-medium truncate"></p>
         </div>
-        <button id="account-signout" type="button" class="text-[11px] uppercase tracking-[0.15em] underline text-[#7F7973] hover:text-[#2C2A29]">Déconnexion</button>
+        <div class="flex flex-wrap items-center gap-4">
+          <!-- Raccourci administration (affiché uniquement pour le compte administrateur) -->
+          <a id="account-admin-link" href="admin.html" class="hidden px-4 py-2.5 bg-[#2C2A29] text-[#FDFBF7] text-[11px] uppercase tracking-[0.18em] hover:bg-[#43403E] transition-colors">Administration &rarr;</a>
+          <button id="account-signout" type="button" class="text-[11px] uppercase tracking-[0.15em] underline text-[#7F7973] hover:text-[#2C2A29]">Déconnexion</button>
+        </div>
       </div>
 
       <!-- Fidélité (masquée si le programme est désactivé) -->
